@@ -6,6 +6,8 @@ import java.util.Calendar
 plugins {
     java
     jacoco
+    maven
+    `maven-publish`
     id("com.github.hierynomus.license") version "0.15.0"
     id("io.franzbecker.gradle-lombok") version "3.2.0"
     id("me.qoomon.git-versioning") version "2.1.1"
