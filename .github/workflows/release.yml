@@ -18,7 +18,6 @@ jobs:
             - name: Build with Gradle
               run: ./gradlew build
             - name: Upload jar to release
-              if: matrix.prefix == 'nix'
               uses: AButler/upload-release-assets@v1.0
               with:
                   files: './build/libs/*.jar'
