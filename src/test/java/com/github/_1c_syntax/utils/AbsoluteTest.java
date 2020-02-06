@@ -44,6 +44,7 @@ package com.github._1c_syntax.utils;/*
 import org.junit.jupiter.api.Test;
 
 import java.io.File;
+import java.net.URI;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -55,11 +56,28 @@ class AbsoluteTest {
     var file = new File("/fake.bsl");
 
     // when
-    var uri = Absolute.uri(file.toURI());
+    var uriFromUri = Absolute.uri(file.toURI());
+    var uriFromFile = Absolute.uri(file);
 
     // then
-    assertThat(uri).hasScheme("file");
-    assertThat(uri.getPath()).endsWith("fake.bsl");
+    assertThat(uriFromUri).isEqualTo(uriFromFile);
+    assertThat(uriFromFile).hasScheme("file");
+    assertThat(uriFromFile.getPath()).endsWith("fake.bsl");
+  }
+
+  @Test
+  void testUriFromString() {
+    // given
+    var uriString = "file:///fake.bsl";
+
+    // when
+    var uriFromString = Absolute.uri(uriString);
+    var uriFromFile = Absolute.uri(new File(URI.create(uriString)));
+
+    // then
+    assertThat(uriFromString).isEqualTo(uriFromFile);
+    assertThat(uriFromFile).hasScheme("file");
+    assertThat(uriFromFile.getPath()).endsWith("fake.bsl");
   }
 
   @Test

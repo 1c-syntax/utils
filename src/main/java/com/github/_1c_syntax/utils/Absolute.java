@@ -36,7 +36,17 @@ public final class Absolute {
   }
 
   public static URI uri(URI uri) {
-    return URI.create(uri.getScheme() + ":" + uri.getSchemeSpecificPart());
+    var decodedUri = URI.create(uri.getScheme() + ":" + uri.getSchemeSpecificPart());
+
+    if ("file".equals(decodedUri.getScheme()) && decodedUri.getAuthority() == null) {
+      return path(new File(decodedUri)).toUri();
+    }
+
+    return decodedUri;
+  }
+
+  public static URI uri(File file) {
+    return uri(path(file).toUri());
   }
 
   public static Path path(String path) {
