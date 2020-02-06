@@ -22,38 +22,31 @@
 package com.github._1c_syntax.utils;
 
 import lombok.SneakyThrows;
+import lombok.experimental.UtilityClass;
 
 import java.io.File;
 import java.net.URI;
 import java.nio.file.Path;
 
+@UtilityClass
 public final class Absolute {
 
-  private Absolute() {
-    // Utility class
-  }
-
-  @SneakyThrows
   public static URI uri(String uri) {
     return uri(URI.create(uri));
   }
 
-  @SneakyThrows
   public static URI uri(URI uri) {
     return URI.create(uri.getScheme() + ":" + uri.getSchemeSpecificPart());
   }
 
-  @SneakyThrows
   public static Path path(String path) {
     return path(Path.of(path));
   }
 
-  @SneakyThrows
   public static Path path(URI uri) {
     return path(Path.of(uri(uri)));
   }
 
-  @SneakyThrows
   public static Path path(Path path) {
     return path(path.toFile());
   }
