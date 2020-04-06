@@ -144,4 +144,15 @@ class AbsoluteTest {
     assertThat(uri).hasScheme("untitled");
   }
 
+  @Test
+  void testUriFromStringWithSpaces() {
+    // given
+    var uriString = "file:///fake%20path/fake.bsl";
+
+    // when
+    var uri = Absolute.uri(uriString);
+
+    // then
+    assertThat(uri.getPath()).endsWith("fake.bsl");
+  }
 }

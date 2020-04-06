@@ -36,7 +36,7 @@ public final class Absolute {
   }
 
   public static URI uri(URI uri) {
-    var decodedUri = URI.create(uri.getScheme() + ":" + uri.getSchemeSpecificPart());
+    var decodedUri = URI.create(uri.getScheme() + ":" + uri.getSchemeSpecificPart().replace(" ", "%20"));
 
     if ("file".equals(decodedUri.getScheme()) && decodedUri.getAuthority() == null) {
       return path(new File(decodedUri)).toUri();
