@@ -2,6 +2,7 @@ import me.qoomon.gradle.gitversioning.GitVersioningPluginConfig
 import me.qoomon.gradle.gitversioning.GitVersioningPluginConfig.CommitVersionDescription
 import me.qoomon.gradle.gitversioning.GitVersioningPluginConfig.VersionDescription
 import java.util.Calendar
+import java.net.URI
 
 plugins {
     java
@@ -18,6 +19,7 @@ group = "com.github.1c-syntax"
 
 repositories {
     mavenCentral()
+    maven { url = URI("https://jitpack.io") }
 }
 
 val junitVersion = "5.6.0"
@@ -25,6 +27,13 @@ val junitVersion = "5.6.0"
 dependencies {
 
     compileOnly("org.projectlombok", "lombok", lombok.version)
+
+    implementation("com.github.hub4j:github-api:github-api-1.114")
+    implementation("org.slf4j", "slf4j-api", "1.8.0-beta4")
+    implementation("org.slf4j", "slf4j-simple", "1.8.0-beta4")
+
+    // https://mvnrepository.com/artifact/commons-io/commons-io
+    implementation("commons-io", "commons-io", "2.7")
 
     testImplementation("org.junit.jupiter", "junit-jupiter-api", junitVersion)
     testRuntimeOnly("org.junit.jupiter", "junit-jupiter-engine", junitVersion)
