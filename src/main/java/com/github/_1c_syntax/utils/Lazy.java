@@ -28,8 +28,8 @@ import static java.util.Objects.requireNonNull;
 
 public final class Lazy<T> {
 
-  private Supplier<T> supplier;
-  private ReentrantLock lock;
+  private final Supplier<T> supplier;
+  private final ReentrantLock lock;
   private volatile T value;
 
   public Lazy(Supplier<T> supplier) {
