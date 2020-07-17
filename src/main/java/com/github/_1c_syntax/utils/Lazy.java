@@ -42,6 +42,10 @@ public final class Lazy<T> {
     this.lock = lock;
   }
 
+  public T get() {
+    return value;
+  }
+
   public T getOrCompute(Supplier<T> supplier) {
     final T result = value; // Just one volatile read
     if (result == null) {
