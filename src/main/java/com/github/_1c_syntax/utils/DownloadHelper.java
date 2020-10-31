@@ -99,7 +99,7 @@ public class DownloadHelper {
 
   private Optional<GHRelease> getLatestRelease(GHRepository repo, boolean prerelease) throws IOException {
     return repo.listReleases().toList().stream()
-      .filter(ghRelease -> ghRelease.isPrerelease() == prerelease)
+      .filter(ghRelease -> prerelease || !ghRelease.isPrerelease())
       .limit(1)
       .findAny();
   }
