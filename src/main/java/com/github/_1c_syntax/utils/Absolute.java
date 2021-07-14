@@ -25,24 +25,41 @@ import lombok.SneakyThrows;
 import lombok.experimental.UtilityClass;
 
 import java.io.File;
+import java.net.MalformedURLException;
 import java.net.URI;
+import java.net.URISyntaxException;
+import java.net.URL;
+import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 
 @UtilityClass
 public final class Absolute {
 
   public static URI uri(String uri) {
-    return uri(URI.create(uri));
+    try {
+      URL url = new URL(uri);
+      var decodedPath = URLDecoder.decode(url.getPath(), StandardCharsets.UTF_8);
+      var decodedUri = new URI(
+        url.getProtocol(),
+        url.getUserInfo(),
+        url.getHost(),
+        url.getPort(),
+        decodedPath,
+        url.getQuery(),
+        url.getRef()
+      );
+
+      return checkFileAuthorityAndReturnURI(decodedUri);
+    } catch (MalformedURLException | URISyntaxException e) {
+      return uri(URI.create(uri));
+    }
   }
 
   public static URI uri(URI uri) {
-    var decodedUri = URI.create(uri.getScheme() + ":" + uri.getSchemeSpecificPart().replace(" ", "%20"));
+    var decodedUri = URI.create(uri.getScheme() + ":" + encodePath(uri.getSchemeSpecificPart()));
 
-    if ("file".equals(decodedUri.getScheme()) && decodedUri.getAuthority() == null) {
-      return path(new File(decodedUri)).toUri();
-    }
-
-    return decodedUri;
+    return checkFileAuthorityAndReturnURI(decodedUri);
   }
 
   public static URI uri(File file) {
@@ -64,5 +81,21 @@ public final class Absolute {
   @SneakyThrows
   public static Path path(File file) {
     return file.getCanonicalFile().toPath().toAbsolutePath();
+  }
+
+  private static String encodePath(String path) {
+    return path
+      .replace(" ", "%25")
+      .replace("[", "%91")
+      .replace("]", "%93")
+      ;
+  }
+
+  private static URI checkFileAuthorityAndReturnURI(URI uri) {
+    if ("file".equals(uri.getScheme()) && uri.getAuthority() == null) {
+      return path(new File(uri)).toUri();
+    }
+
+    return uri;
   }
 }
