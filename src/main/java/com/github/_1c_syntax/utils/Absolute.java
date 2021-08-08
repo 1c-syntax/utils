@@ -85,7 +85,7 @@ public final class Absolute {
 
   private static String encodePath(String path) {
     return path
-      .replace(" ", "%25")
+      .replace(" ", "%20")
       .replace("[", "%91")
       .replace("]", "%93")
       ;
