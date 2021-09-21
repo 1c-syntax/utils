@@ -93,6 +93,7 @@ public final class Absolute {
       .replace("}", "%7D")
       .replace(":", "%3A")
       .replace("\"", "%22")
+      .replace("\\", "%5C")
       ;
   }
 
