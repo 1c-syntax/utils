@@ -88,6 +88,12 @@ public final class Absolute {
       .replace(" ", "%20")
       .replace("[", "%91")
       .replace("]", "%93")
+      .replace("?", "%3F")
+      .replace("{", "%7B")
+      .replace("}", "%7D")
+      .replace(":", "%3A")
+      .replace("\"", "%22")
+      .replace("\\", "%5C")
       ;
   }
 

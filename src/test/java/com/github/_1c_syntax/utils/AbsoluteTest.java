@@ -148,4 +148,28 @@ class AbsoluteTest {
     assertThat(uri.toString()).doesNotContain("[");
     assertThat(uri.toString()).doesNotContain("]");
   }
+
+  @Test
+  void testUriFromGitLens() {
+    // given
+    var uriString = "gitlens://d5ff5b3/d%3A/git/repo/src/cf/Documents/Some/Ext/ObjectModule.bsl?%7B%22path%22%3A%22%2Fd%3A%2Fgit%2Frepo%2Fsrc%2Fcf%2FDocuments%2FSome%2FExt%2FObjectModule.bsl%22%2C%22ref%22%3A%22d5ff5b3c52bdd1f26f838944ec99f62346d2771b%22%2C%22repoPath%22%3A%22d%3A%2Fgit%2Frepo%22%7D";
+
+    // when
+    var uri = Absolute.uri(uriString);
+
+    // then
+    assertThat(uri.getPath()).endsWith("\"repoPath\":\"d:/git/repo\"}");
+  }
+
+  @Test
+  void testUriFromGit() {
+    // given
+    var uriString = "git:/e%3A/user/repo/Some/Module.bsl?%7B%22path%22%3A%22e%3A%5C%5Cuser%5C%5Crepo%5C%5CSome%5C%5CModule.bsl%22%2C%22ref%22%3A%22~%22%7D";
+
+    // when
+    var uri = Absolute.uri(uriString);
+
+    // then
+    assertThat(uri.getPath()).endsWith("\"ref\":\"~\"}");
+  }
 }
