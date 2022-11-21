@@ -22,4 +22,8 @@
 package com.github._1c_syntax.utils;
 
 public class StringInterner extends GenericInterner<String> {
+  @Override
+  public String intern(String object) {
+    return super.intern(object);
+  }
 }
