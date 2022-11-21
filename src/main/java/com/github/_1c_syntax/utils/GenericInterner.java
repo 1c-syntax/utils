@@ -21,5 +21,19 @@
  */
 package com.github._1c_syntax.utils;
 
-public class StringInterner extends GenericInterner<String> {
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+
+public class GenericInterner<T> {
+
+  private final Map<T, T> map = new ConcurrentHashMap<>();
+
+  public T intern(T object) {
+    var exist = map.putIfAbsent(object, object);
+    return (exist == null) ? object : exist;
+  }
+
+  public void clear() {
+    map.clear();
+  }
 }
