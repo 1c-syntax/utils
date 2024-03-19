@@ -1,7 +1,7 @@
 /*
  * This file is a part of 1c-syntax utils.
  *
- * Copyright © 2018-2024
+ * Copyright (c) 2018-2024
  * Alexey Sosnoviy <labotamy@gmail.com>, Nikita Fedkin <nixel2007@gmail.com> and contributors
  *
  * SPDX-License-Identifier: LGPL-3.0-or-later
@@ -21,9 +21,17 @@
  */
 package com.github._1c_syntax.utils;
 
+import edu.umd.cs.findbugs.annotations.Nullable;
+
+/**
+ * Реализация интернера для строк
+ */
 public class StringInterner extends GenericInterner<String> {
   @Override
-  public String intern(String object) {
+  public String intern(@Nullable String object) {
+    if (object == null) {
+      return "";
+    }
     return super.intern(object);
   }
 }
