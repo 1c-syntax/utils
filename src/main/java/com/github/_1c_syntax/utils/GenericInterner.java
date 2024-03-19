@@ -1,7 +1,7 @@
 /*
  * This file is a part of 1c-syntax utils.
  *
- * Copyright © 2018-2024
+ * Copyright (c) 2018-2024
  * Alexey Sosnoviy <labotamy@gmail.com>, Nikita Fedkin <nixel2007@gmail.com> and contributors
  *
  * SPDX-License-Identifier: LGPL-3.0-or-later
@@ -24,6 +24,9 @@ package com.github._1c_syntax.utils;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
+/**
+ * Реализация интернера
+ */
 public class GenericInterner<T> {
 
   private final Map<T, T> map = new ConcurrentHashMap<>();
