@@ -1,7 +1,7 @@
 /*
  * This file is a part of 1c-syntax utils.
  *
- * Copyright © 2018-2024
+ * Copyright (c) 2018-2024
  * Alexey Sosnoviy <labotamy@gmail.com>, Nikita Fedkin <nixel2007@gmail.com> and contributors
  *
  * SPDX-License-Identifier: LGPL-3.0-or-later
@@ -21,6 +21,7 @@
  */
 package com.github._1c_syntax.utils;
 
+import lombok.NonNull;
 import lombok.SneakyThrows;
 import lombok.experimental.UtilityClass;
 
@@ -33,10 +34,13 @@ import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 
+/**
+ * Методы получения абсолютного пути файла с учетом различных особенностей
+ */
 @UtilityClass
 public final class Absolute {
 
-  public static URI uri(String uri) {
+  public static URI uri(@NonNull String uri) {
     try {
       URL url = new URL(uri);
       var decodedPath = URLDecoder.decode(url.getPath(), StandardCharsets.UTF_8);
@@ -56,34 +60,34 @@ public final class Absolute {
     }
   }
 
-  public static URI uri(URI uri) {
+  public static URI uri(@NonNull URI uri) {
     var decodedUri = URI.create(uri.getScheme() + ":" + encodePath(uri.getSchemeSpecificPart()));
 
     return checkFileAuthorityAndReturnURI(decodedUri);
   }
 
-  public static URI uri(File file) {
+  public static URI uri(@NonNull File file) {
     return uri(path(file).toUri());
   }
 
-  public static Path path(String path) {
+  public static Path path(@NonNull String path) {
     return path(Path.of(path));
   }
 
-  public static Path path(URI uri) {
+  public static Path path(@NonNull URI uri) {
     return path(Path.of(uri(uri)));
   }
 
-  public static Path path(Path path) {
+  public static Path path(@NonNull Path path) {
     return path(path.toFile());
   }
 
   @SneakyThrows
-  public static Path path(File file) {
+  public static Path path(@NonNull File file) {
     return file.getCanonicalFile().toPath().toAbsolutePath();
   }
 
-  private static String encodePath(String path) {
+  private static String encodePath(@NonNull String path) {
     return path
       .replace(" ", "%20")
       .replace("#", "%23")
@@ -98,7 +102,7 @@ public final class Absolute {
       ;
   }
 
-  private static URI checkFileAuthorityAndReturnURI(URI uri) {
+  private static URI checkFileAuthorityAndReturnURI(@NonNull URI uri) {
     if ("file".equals(uri.getScheme()) && uri.getAuthority() == null) {
       return path(new File(uri)).toUri();
     }

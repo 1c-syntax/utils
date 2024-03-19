@@ -1,7 +1,7 @@
 /*
  * This file is a part of 1c-syntax utils.
  *
- * Copyright © 2018-2024
+ * Copyright (c) 2018-2024
  * Alexey Sosnoviy <labotamy@gmail.com>, Nikita Fedkin <nixel2007@gmail.com> and contributors
  *
  * SPDX-License-Identifier: LGPL-3.0-or-later
@@ -22,6 +22,7 @@
 package com.github._1c_syntax.utils;
 
 
+import lombok.NonNull;
 import lombok.experimental.UtilityClass;
 
 import java.util.regex.Pattern;
@@ -37,19 +38,13 @@ public class CaseInsensitivePattern {
    * Compiles the given regular expression into a pattern with CASE_INSENSITIVE and UNICODE_CASE
    * flags.
    *
-   * @param  regex
-   *         The expression to be compiled
-   *
-   *
+   * @param regex The expression to be compiled
    * @return the given regular expression compiled into a pattern with the given flags
-   * @throws  IllegalArgumentException
-   *          If bit values other than those corresponding to the defined
-   *          match flags are set in {@code flags}
-   *
-   * @throws PatternSyntaxException
-   *          If the expression's syntax is invalid
+   * @throws IllegalArgumentException If bit values other than those corresponding to the defined
+   *                                  match flags are set in {@code flags}
+   * @throws PatternSyntaxException   If the expression's syntax is invalid
    */
-  public static Pattern compile(String regex) {
+  public static @NonNull Pattern compile(@NonNull String regex) {
     return Pattern.compile(regex, Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE);
   }
 

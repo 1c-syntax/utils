@@ -1,7 +1,7 @@
 /*
  * This file is a part of 1c-syntax utils.
  *
- * Copyright © 2018-2024
+ * Copyright (c) 2018-2024
  * Alexey Sosnoviy <labotamy@gmail.com>, Nikita Fedkin <nixel2007@gmail.com> and contributors
  *
  * SPDX-License-Identifier: LGPL-3.0-or-later
@@ -24,7 +24,7 @@ package com.github._1c_syntax.utils;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 class StringInternerTest {
 
@@ -38,8 +38,8 @@ class StringInternerTest {
   @Test
   void testIntern() {
     //given
-    String s1 = new String("1");
-    String s2 = new String("1");
+    String s1 = "1";
+    String s2 = "1";
 
     // when
     var intern1 = interner.intern(s1);
@@ -58,8 +58,8 @@ class StringInternerTest {
   void testClear() {
 
     //given
-    String s1 = new String("1");
-    String s2 = new String("1");
+    String s1 = "1";
+    String s2 = "1";
 
     interner.intern(s1);
 
