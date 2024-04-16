@@ -43,7 +43,7 @@ repositories {
 val junitVersion = "5.7.0"
 
 dependencies {
-    compileOnly("com.github.spotbugs:spotbugs-annotations:4.8.3")
+    compileOnly("com.github.spotbugs:spotbugs-annotations:4.8.4")
     testImplementation("org.junit.jupiter", "junit-jupiter-api", junitVersion)
     testRuntimeOnly("org.junit.jupiter", "junit-jupiter-engine", junitVersion)
     testImplementation("org.assertj", "assertj-core", "3.18.1")
