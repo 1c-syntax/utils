@@ -8,12 +8,12 @@ plugins {
     signing
     id("org.cadixdev.licenser") version "0.6.1"
     id("me.qoomon.git-versioning") version "6.4.3"
-    id("com.gorylenko.gradle-git-properties") version "2.4.1"
+    id("com.gorylenko.gradle-git-properties") version "2.4.2"
     id("io.freefair.lombok") version "8.6"
     id("io.freefair.javadoc-links") version "8.6"
     id("io.freefair.javadoc-utf-8") version "8.6"
     id("io.freefair.maven-central.validate-poms") version "8.6"
-    id("com.github.ben-manes.versions") version "0.27.0"
+    id("com.github.ben-manes.versions") version "0.51.0"
     id("ru.vyarus.pom") version "3.0.0"
     id("io.codearte.nexus-staging") version "0.30.0"
 }
@@ -43,7 +43,7 @@ repositories {
 val junitVersion = "5.7.0"
 
 dependencies {
-    compileOnly("com.github.spotbugs:spotbugs-annotations:4.8.3")
+    compileOnly("com.github.spotbugs:spotbugs-annotations:4.8.5")
     testImplementation("org.junit.jupiter", "junit-jupiter-api", junitVersion)
     testRuntimeOnly("org.junit.jupiter", "junit-jupiter-engine", junitVersion)
     testImplementation("org.assertj", "assertj-core", "3.18.1")

@@ -42,7 +42,7 @@ public final class Absolute {
 
   public static URI uri(@NonNull String uri) {
     try {
-      URL url = new URL(uri);
+      var url = new URL(uri);
       var decodedPath = URLDecoder.decode(url.getPath(), StandardCharsets.UTF_8);
       var decodedUri = new URI(
         url.getProtocol(),
