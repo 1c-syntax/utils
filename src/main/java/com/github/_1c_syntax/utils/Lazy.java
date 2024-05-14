@@ -50,10 +50,10 @@ public final class Lazy<T> {
   }
 
   public T getOrCompute(Supplier<T> supplier) {
-    final T result = value; // Just one volatile read
+    final var result = value; // Just one volatile read
     if (result == null) {
       lock.lock();
-      T localResult = maybeCompute(supplier);
+      var localResult = maybeCompute(supplier);
       lock.unlock();
       return localResult;
     }
@@ -65,7 +65,7 @@ public final class Lazy<T> {
   }
 
   public boolean isPresent() {
-    final T result = value;
+    final var result = value;
     return result != null;
   }
 
