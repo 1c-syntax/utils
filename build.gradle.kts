@@ -40,13 +40,11 @@ repositories {
     mavenCentral()
 }
 
-val junitVersion = "5.7.0"
-
 dependencies {
-    compileOnly("com.github.spotbugs:spotbugs-annotations:4.8.6")
-    testImplementation("org.junit.jupiter", "junit-jupiter-api", junitVersion)
-    testRuntimeOnly("org.junit.jupiter", "junit-jupiter-engine", junitVersion)
-    testImplementation("org.assertj", "assertj-core", "3.18.1")
+    compileOnly("com.github.spotbugs", "spotbugs-annotations", "4.8.6")
+    testImplementation("org.junit.jupiter", "junit-jupiter-api", "5.11.4")
+    testRuntimeOnly("org.junit.jupiter", "junit-jupiter-engine", "5.11.4")
+    testImplementation("org.assertj", "assertj-core", "3.27.0")
 }
 
 java {
@@ -81,7 +79,7 @@ tasks.check {
 tasks.jacocoTestReport {
     reports {
         xml.required.set(true)
-        xml.outputLocation.set(File("$buildDir/reports/jacoco/test/jacoco.xml"))
+        xml.outputLocation.set(layout.buildDirectory.file("reports/jacoco/test/jacoco.xml"))
     }
 }
 
