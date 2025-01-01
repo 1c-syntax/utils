@@ -1,7 +1,7 @@
 /*
  * This file is a part of 1c-syntax utils.
  *
- * Copyright (c) 2018-2024
+ * Copyright (c) 2018-2025
  * Alexey Sosnoviy <labotamy@gmail.com>, Nikita Fedkin <nixel2007@gmail.com> and contributors
  *
  * SPDX-License-Identifier: LGPL-3.0-or-later
@@ -40,6 +40,12 @@ import java.nio.file.Path;
 @UtilityClass
 public final class Absolute {
 
+  /**
+   * Получение URI из строки
+   *
+   * @param uri - строковое представление URI
+   * @return - полученное значение
+   */
   public static URI uri(@NonNull String uri) {
     try {
       var url = new URL(uri);
@@ -60,28 +66,64 @@ public final class Absolute {
     }
   }
 
+  /**
+   * Получение абсолютного URI из URI с валидацией
+   *
+   * @param uri - исходный URI
+   * @return - полученное значение
+   */
   public static URI uri(@NonNull URI uri) {
     var decodedUri = URI.create(uri.getScheme() + ":" + encodePath(uri.getSchemeSpecificPart()));
 
     return checkFileAuthorityAndReturnURI(decodedUri);
   }
 
+  /**
+   * Получение URI файла
+   *
+   * @param file - исходный файл
+   * @return - полученное значение
+   */
   public static URI uri(@NonNull File file) {
     return uri(path(file).toUri());
   }
 
+  /**
+   * Получение пути (path) из строки
+   *
+   * @param path - строковое представление пути
+   * @return - полученное значение
+   */
   public static Path path(@NonNull String path) {
     return path(Path.of(path));
   }
 
+  /**
+   * Получение пути (path) из URI
+   *
+   * @param uri - исходное значение URI
+   * @return - полученное значение
+   */
   public static Path path(@NonNull URI uri) {
     return path(Path.of(uri(uri)));
   }
 
+  /**
+   * Получение абсолютного пути (path) из Path
+   *
+   * @param path - исходное значение пути
+   * @return - полученное значение
+   */
   public static Path path(@NonNull Path path) {
     return path(path.toFile());
   }
 
+  /**
+   * Получение пути файла
+   *
+   * @param file - исходный файл
+   * @return - полученное значение
+   */
   @SneakyThrows
   public static Path path(@NonNull File file) {
     return file.getCanonicalFile().toPath().toAbsolutePath();

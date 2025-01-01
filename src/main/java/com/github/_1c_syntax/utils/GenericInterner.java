@@ -1,7 +1,7 @@
 /*
  * This file is a part of 1c-syntax utils.
  *
- * Copyright (c) 2018-2024
+ * Copyright (c) 2018-2025
  * Alexey Sosnoviy <labotamy@gmail.com>, Nikita Fedkin <nixel2007@gmail.com> and contributors
  *
  * SPDX-License-Identifier: LGPL-3.0-or-later
@@ -25,17 +25,26 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Реализация интернера
+ * Реализация универсального интернера
  */
 public class GenericInterner<T> {
 
   private final Map<T, T> map = new ConcurrentHashMap<>();
 
+  /**
+   * Метод интернирования значения
+   *
+   * @param object Интернируемый объект
+   * @return значение из кеша
+   */
   public T intern(T object) {
     var exist = map.putIfAbsent(object, object);
     return (exist == null) ? object : exist;
   }
 
+  /**
+   * Очистка кеша интернера
+   */
   public void clear() {
     map.clear();
   }
