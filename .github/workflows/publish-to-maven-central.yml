@@ -18,12 +18,17 @@ jobs:
         with:
           java-version: 17
           distribution: 'temurin'
+          server-username: ${{ secrets.SONATYPE_USERNAME }}
+          server-password: ${{ secrets.SONATYPE_PASSWORD }}
+          gpg-private-key: ${{ secrets.GPG_PRIVATE_KEY }}
+          gpg-passphrase: ${{ secrets.GPG_SIGNING_PASSWORD }}
+          cache: maven
       - name: Deploy to Central Portal
         run: |
           ./gradlew publishMavenPublicationToStagingRepository
           ./gradlew jreleaserDeploy
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          JRELEASER_GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           JRELEASER_MAVENCENTRAL_USERNAME: ${{ secrets.SONATYPE_USERNAME }}
           JRELEASER_MAVENCENTRAL_PASSWORD: ${{ secrets.SONATYPE_PASSWORD }}
           JRELEASER_GPG_PUBLIC_KEY: ${{ secrets.GPG_SIGNING_KEY }}
