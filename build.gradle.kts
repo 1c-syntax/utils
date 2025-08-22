@@ -6,14 +6,13 @@ plugins {
     `java-library`
     `maven-publish`
     jacoco
-    signing
     id("org.cadixdev.licenser") version "0.6.1"
     id("me.qoomon.git-versioning") version "6.4.4"
     id("com.gorylenko.gradle-git-properties") version "2.5.2"
-    id("io.freefair.lombok") version "8.11"
-    id("io.freefair.javadoc-links") version "8.11"
-    id("io.freefair.javadoc-utf-8") version "8.11"
-    id("io.freefair.maven-central.validate-poms") version "8.11"
+    id("io.freefair.lombok") version "8.14.2"
+    id("io.freefair.javadoc-links") version "8.14.2"
+    id("io.freefair.javadoc-utf-8") version "8.14.2"
+    id("io.freefair.maven-central.validate-poms") version "8.14.2"
     id("com.github.ben-manes.versions") version "0.52.0"
     id("ru.vyarus.pom") version "3.0.0"
     id("org.jreleaser") version "1.19.0"
