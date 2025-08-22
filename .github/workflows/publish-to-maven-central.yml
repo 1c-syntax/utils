@@ -18,11 +18,6 @@ jobs:
         with:
           java-version: 17
           distribution: 'temurin'
-          server-id: central
-          server-username: ${{ secrets.SONATYPE_USERNAME }}
-          server-password: ${{ secrets.SONATYPE_PASSWORD }}
-          gpg-private-key: ${{ secrets.GPG_PRIVATE_KEY }}
-          gpg-passphrase: ${{ secrets.GPG_SIGNING_PASSWORD }}
           cache: maven
       - name: Deploy to Central Portal
         run: |
