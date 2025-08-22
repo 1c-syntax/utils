@@ -1,4 +1,3 @@
-import me.qoomon.gitversioning.commons.GitRefType
 import java.util.Calendar
 import org.jreleaser.model.Active.*
 
@@ -8,7 +7,6 @@ plugins {
     jacoco
     id("org.cadixdev.licenser") version "0.6.1"
     id("me.qoomon.git-versioning") version "6.4.4"
-    id("com.gorylenko.gradle-git-properties") version "2.5.2"
     id("io.freefair.lombok") version "8.14.2"
     id("io.freefair.javadoc-links") version "8.14.2"
     id("io.freefair.javadoc-utf-8") version "8.14.2"
@@ -21,10 +19,17 @@ plugins {
 group = "io.github.1c-syntax"
 gitVersioning.apply {
     refs {
-        considerTagsOnBranches = true
+        describeTagFirstParent = false
         tag("v(?<tagVersion>[0-9].*)") {
             version = "\${ref.tagVersion}\${dirty}"
         }
+
+        branch("develop") {
+            version = "\${describe.tag.version.major}." +
+                    "\${describe.tag.version.minor.next}.0." +
+                    "\${describe.distance}-SNAPSHOT\${dirty}"
+        }
+
         branch(".+") {
             version = "\${ref}-\${commit.short}\${dirty}"
         }
@@ -34,7 +39,6 @@ gitVersioning.apply {
         version = "\${commit.short}\${dirty}"
     }
 }
-val isSnapshot = gitVersioning.gitVersionDetails.refType != GitRefType.TAG
 
 repositories {
     mavenCentral()
@@ -118,11 +122,6 @@ publishing {
     publications {
         create<MavenPublication>("maven") {
             from(components["java"])
-
-            if (isSnapshot && project.hasProperty("simplifyVersion")) {
-                version = findProperty("git.ref.slug") as String + "-SNAPSHOT"
-            }
-
             pom {
                 description.set("Common utils for 1c-syntax team java projects")
                 url.set("https://github.com/1c-syntax/utils")
@@ -207,4 +206,3 @@ jreleaser {
         }
     }
 }
-
