@@ -109,15 +109,6 @@ artifacts {
     archives(tasks["javadocJar"])
 }
 
-signing {
-    val signingInMemoryKey: String? by project      // env.ORG_GRADLE_PROJECT_signingInMemoryKey
-    val signingInMemoryPassword: String? by project // env.ORG_GRADLE_PROJECT_signingInMemoryPassword
-    if (signingInMemoryKey != null) {
-        useInMemoryPgpKeys(signingInMemoryKey, signingInMemoryPassword)
-        sign(publishing.publications)
-    }
-}
-
 publishing {
     repositories {
         maven {
@@ -217,3 +208,4 @@ jreleaser {
         }
     }
 }
+
