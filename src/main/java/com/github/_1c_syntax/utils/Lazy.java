@@ -21,6 +21,8 @@
  */
 package com.github._1c_syntax.utils;
 
+import edu.umd.cs.findbugs.annotations.Nullable;
+
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Supplier;
 
@@ -45,6 +47,7 @@ public final class Lazy<T> {
     this.lock = lock;
   }
 
+  @Nullable
   public T get() {
     return value;
   }
