@@ -48,7 +48,7 @@ public final class Absolute {
    */
   public static URI uri(@NonNull String uri) {
     try {
-      var url = new URL(uri);
+      var url = new URL(uri.replace("+", "%2B"));
       var decodedPath = URLDecoder.decode(url.getPath(), StandardCharsets.UTF_8);
       var decodedUri = new URI(
         url.getProtocol(),
@@ -133,6 +133,8 @@ public final class Absolute {
     return path
       .replace(" ", "%20")
       .replace("#", "%23")
+      .replace("+", "%2B")
+      .replace(",", "%2C")
       .replace("[", "%91")
       .replace("]", "%93")
       .replace("?", "%3F")
@@ -141,6 +143,7 @@ public final class Absolute {
       .replace(":", "%3A")
       .replace("\"", "%22")
       .replace("\\", "%5C")
+      .replace("^", "%5E")
       ;
   }
 

@@ -80,6 +80,55 @@ class AbsoluteTest {
   }
 
   @Test
+  void testStringWithPlus() {
+    // given
+    var uriString = "file:///git/some+thing.os";
+
+    // when
+    var uri = Absolute.uri(uriString);
+
+    // then
+    assertThat(uri)
+      .hasScheme("file");
+
+    assertThat(uri.getPath())
+      .endsWith("some+thing.os");
+  }
+
+  @Test
+  void testEscapedSymbols() {
+    // given
+    var uriString = "file:///git/1_Тест-Набор.Со+Странным^Именем_1,.os";
+
+    // when
+    var uri = Absolute.uri(uriString);
+
+    // then
+    assertThat(uri)
+      .hasScheme("file");
+
+    assertThat(uri.getPath())
+      .endsWith("1_Тест-Набор.Со+Странным^Именем_1,.os");
+  }
+
+  @Test
+  void testEscapedSymbolsURI() {
+    // given
+    var file = new File("/git/1_Тест-Набор.Со+Странным^Именем_1,.os");
+    var uriFromFile = file.toURI();
+
+    // when
+    var uri = Absolute.uri(uriFromFile);
+
+    // then
+    assertThat(uri)
+      .hasScheme("file");
+
+    assertThat(uri.getPath())
+      .endsWith("1_Тест-Набор.Со+Странным^Именем_1,.os");
+  }
+
+  @Test
   void testUNCWithPortURI() {
     // given
     var uriString = "file://server:1234/c%24/fake.bsl";
