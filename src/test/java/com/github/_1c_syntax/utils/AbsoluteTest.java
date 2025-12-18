@@ -221,4 +221,18 @@ class AbsoluteTest {
     // then
     assertThat(uri.getPath()).endsWith("\"ref\":\"~\"}");
   }
+
+  @Test
+  void testUriWithDoublePercent() {
+    // given
+    var uriString = "file:/C%3A/git/aaa/aaaaa6%20(copy)/bit_user_functions/KPI%20ААА%20aaaaaaaa%2C%20%%20(более%2060%20дней)%2C%20руб.bsl";
+
+    // when
+    var uri = Absolute.uri(uriString);
+
+    // then
+    assertThat(uri).hasScheme("file");
+    assertThat(uri.getPath()).contains("% ");
+    assertThat(uri.getPath()).endsWith(".bsl");
+  }
 }

@@ -49,7 +49,8 @@ public final class Absolute {
   public static URI uri(@NonNull String uri) {
     try {
       var url = new URL(uri.replace("+", "%2B"));
-      var decodedPath = URLDecoder.decode(url.getPath(), StandardCharsets.UTF_8);
+      var pathToDecode = url.getPath().replace("%%", "%25%");
+      var decodedPath = URLDecoder.decode(pathToDecode, StandardCharsets.UTF_8);
       var decodedUri = new URI(
         url.getProtocol(),
         url.getUserInfo(),
