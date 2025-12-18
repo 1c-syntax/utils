@@ -235,4 +235,19 @@ class AbsoluteTest {
     assertThat(uri.getPath()).contains("% ");
     assertThat(uri.getPath()).endsWith(".bsl");
   }
+
+  @Test
+  void testUriObjectWithPercent() {
+    // given
+    var file = new File("/git/aaa/KPI ААА % руб.bsl");
+    var uriFromFile = file.toURI();
+
+    // when
+    var uri = Absolute.uri(uriFromFile);
+
+    // then
+    assertThat(uri).hasScheme("file");
+    assertThat(uri.getPath()).contains("% ");
+    assertThat(uri.getPath()).endsWith(".bsl");
+  }
 }

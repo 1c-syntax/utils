@@ -131,6 +131,7 @@ public final class Absolute {
 
   private static String encodePath(@NonNull String path) {
     return path
+      .replace("%", "%25")
       .replace(" ", "%20")
       .replace("#", "%23")
       .replace("+", "%2B")
