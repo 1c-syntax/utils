@@ -1,7 +1,7 @@
 /*
  * This file is a part of 1c-syntax utils.
  *
- * Copyright (c) 2018-2025
+ * Copyright (c) 2018-2026
  * Alexey Sosnoviy <labotamy@gmail.com>, Nikita Fedkin <nixel2007@gmail.com> and contributors
  *
  * SPDX-License-Identifier: LGPL-3.0-or-later
@@ -249,5 +249,91 @@ class AbsoluteTest {
     assertThat(uri).hasScheme("file");
     assertThat(uri.getPath()).contains("% ");
     assertThat(uri.getPath()).endsWith(".bsl");
+  }
+
+  @Test
+  void testUriFromUriWithBrackets() {
+    // given
+    var file = new File("/git/[folder]/test[1].bsl");
+    var uriFromFile = file.toURI();
+
+    // when
+    var uri = Absolute.uri(uriFromFile);
+
+    // then
+    assertThat(uri).hasScheme("file");
+    assertThat(uri.toString()).doesNotContain("[");
+    assertThat(uri.toString()).doesNotContain("]");
+    assertThat(uri.getPath()).contains("[folder]");
+    assertThat(uri.getPath()).endsWith("test[1].bsl");
+  }
+
+  @Test
+  void testUriFromFileWithBrackets() {
+    // given
+    var file = new File("/git/[folder]/test[1].bsl");
+
+    // when
+    var uri = Absolute.uri(file);
+
+    // then
+    assertThat(uri).hasScheme("file");
+    assertThat(uri.toString()).doesNotContain("[");
+    assertThat(uri.toString()).doesNotContain("]");
+    assertThat(uri.getPath()).contains("[folder]");
+    assertThat(uri.getPath()).endsWith("test[1].bsl");
+  }
+
+  @Test
+  void testPathFromStringWithBrackets() {
+    // given
+    var pathString = "/git/[folder]/test[1].bsl";
+
+    // when
+    var path = Absolute.path(pathString);
+
+    // then
+    assertThat(path.toString()).contains("[folder]");
+    assertThat(path.toString()).endsWith("test[1].bsl");
+  }
+
+  @Test
+  void testPathFromUriWithBrackets() {
+    // given
+    var file = new File("/git/[folder]/test[1].bsl");
+    var uriFromFile = file.toURI();
+
+    // when
+    var path = Absolute.path(uriFromFile);
+
+    // then
+    assertThat(path.toString()).contains("[folder]");
+    assertThat(path.toString()).endsWith("test[1].bsl");
+  }
+
+  @Test
+  void testPathFromPathWithBrackets() {
+    // given
+    var pathFromString = java.nio.file.Path.of("/git/[folder]/test[1].bsl");
+
+    // when
+    var path = Absolute.path(pathFromString);
+
+    // then
+    assertThat(path.toString()).contains("[folder]");
+    assertThat(path.toString()).endsWith("test[1].bsl");
+  }
+
+  @Test
+  void testPathFromFileWithBrackets() {
+    // given
+    var file = new File("/git/[folder]/test[1].bsl");
+
+    // when
+    var path = Absolute.path(file);
+
+    // then
+    assertThat(path.toString()).contains("[folder]");
+    assertThat(path.toString()).endsWith("test[1].bsl");
   }
 }

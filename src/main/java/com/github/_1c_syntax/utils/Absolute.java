@@ -1,7 +1,7 @@
 /*
  * This file is a part of 1c-syntax utils.
  *
- * Copyright (c) 2018-2025
+ * Copyright (c) 2018-2026
  * Alexey Sosnoviy <labotamy@gmail.com>, Nikita Fedkin <nixel2007@gmail.com> and contributors
  *
  * SPDX-License-Identifier: LGPL-3.0-or-later
@@ -136,8 +136,8 @@ public final class Absolute {
       .replace("#", "%23")
       .replace("+", "%2B")
       .replace(",", "%2C")
-      .replace("[", "%91")
-      .replace("]", "%93")
+      .replace("[", "%5B")
+      .replace("]", "%5D")
       .replace("?", "%3F")
       .replace("{", "%7B")
       .replace("}", "%7D")
