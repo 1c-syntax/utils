@@ -28,9 +28,6 @@ import java.io.File;
 import java.net.MalformedURLException;
 import java.net.URI;
 import java.net.URISyntaxException;
-import java.net.URL;
-import java.net.URLDecoder;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 
 /**
@@ -47,16 +44,23 @@ public final class Absolute {
    */
   public static URI uri(String uri) {
     try {
-      var url = new URL(uri.replace("+", "%2B").replace("%%", "%25%"));
-      var decodedPath = URLDecoder.decode(url.getPath(), StandardCharsets.UTF_8);
+      var preprocessed = uri
+        .replace("+", "%2B")
+        .replace("%%", "%25%")
+        .replace("[", "%5B")
+        .replace("]", "%5D")
+        .replace("^", "%5E");
+      var parsedUri = new URI(preprocessed);
+      parsedUri.toURL();
+      var decodedPath = parsedUri.getPath();
       var decodedUri = new URI(
-        url.getProtocol(),
-        url.getUserInfo(),
-        url.getHost(),
-        url.getPort(),
+        parsedUri.getScheme(),
+        parsedUri.getUserInfo(),
+        parsedUri.getHost(),
+        parsedUri.getPort(),
         decodedPath,
-        url.getQuery(),
-        url.getRef()
+        parsedUri.getQuery(),
+        parsedUri.getFragment()
       );
 
       return checkFileAuthorityAndReturnURI(decodedUri);
