@@ -21,7 +21,7 @@
  */
 package com.github._1c_syntax.utils;
 
-import edu.umd.cs.findbugs.annotations.Nullable;
+import org.jspecify.annotations.Nullable;
 
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Supplier;
@@ -35,7 +35,7 @@ public final class Lazy<T> {
 
   private final Supplier<T> supplier;
   private final ReentrantLock lock;
-  private volatile T value;
+  private volatile @Nullable T value;
 
   public Lazy(Supplier<T> supplier) {
     this(supplier, new ReentrantLock());
@@ -53,7 +53,7 @@ public final class Lazy<T> {
   }
 
   public T getOrCompute(Supplier<T> supplier) {
-    final var result = value; // Just one volatile read
+    final T result = value; // Just one volatile read
     if (result == null) {
       lock.lock();
       var localResult = maybeCompute(supplier);
@@ -68,7 +68,7 @@ public final class Lazy<T> {
   }
 
   public boolean isPresent() {
-    final var result = value;
+    final T result = value;
     return result != null;
   }
 
@@ -81,6 +81,6 @@ public final class Lazy<T> {
       requireNonNull(supplier);
       value = requireNonNull(supplier.get());
     }
-    return value;
+    return requireNonNull(value);
   }
 }

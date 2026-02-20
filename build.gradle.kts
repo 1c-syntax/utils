@@ -45,7 +45,7 @@ repositories {
 }
 
 dependencies {
-    compileOnly("com.github.spotbugs:spotbugs-annotations:4.8.6")
+    api("org.jspecify:jspecify:1.0.0")
 
     testImplementation("org.assertj:assertj-core:3.27.7")
 

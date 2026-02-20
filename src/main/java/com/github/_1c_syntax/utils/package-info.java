@@ -19,30 +19,7 @@
  * You should have received a copy of the GNU Lesser General Public
  * License along with 1c-syntax utils.
  */
+@NullMarked
 package com.github._1c_syntax.utils;
 
-import lombok.experimental.UtilityClass;
-
-import java.util.regex.Pattern;
-import java.util.regex.PatternSyntaxException;
-
-/**
- * Pattern helper
- */
-@UtilityClass
-public class CaseInsensitivePattern {
-
-  /**
-   * Compiles the given regular expression into a pattern with CASE_INSENSITIVE and UNICODE_CASE
-   * flags.
-   *
-   * @param regex The expression to be compiled
-   * @return the given regular expression compiled into a pattern with the given flags
-   * @throws IllegalArgumentException If bit values other than those corresponding to the defined
-   *                                  match flags are set in {@code flags}
-   * @throws PatternSyntaxException   If the expression's syntax is invalid
-   */
-  public static Pattern compile(String regex) {
-    return Pattern.compile(regex, Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE);
-  }
-}
+import org.jspecify.annotations.NullMarked;
