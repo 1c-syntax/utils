@@ -5,12 +5,12 @@ plugins {
     `java-library`
     `maven-publish`
     jacoco
-    id("org.cadixdev.licenser") version "0.6.1"
+    id("cloud.rio.license") version "0.18.0"
     id("me.qoomon.git-versioning") version "6.4.4"
     id("io.freefair.lombok") version "9.2.0"
     id("io.freefair.javadoc-links") version "9.2.0"
     id("io.freefair.javadoc-utf-8") version "9.2.0"
-    id("io.freefair.maven-central.validate-poms") version "9.2.0"
+//    id("io.freefair.maven-central.validate-poms") version "9.2.0"
     id("com.github.ben-manes.versions") version "0.53.0"
     id("ru.vyarus.pom") version "3.0.0"
     id("org.jreleaser") version "1.21.0"
@@ -45,10 +45,14 @@ repositories {
 }
 
 dependencies {
-    compileOnly("com.github.spotbugs", "spotbugs-annotations", "4.8.6")
-    testImplementation("org.junit.jupiter", "junit-jupiter-api", "5.11.4")
-    testRuntimeOnly("org.junit.jupiter", "junit-jupiter-engine", "5.11.4")
-    testImplementation("org.assertj", "assertj-core", "3.27.0")
+    compileOnly("com.github.spotbugs:spotbugs-annotations:4.8.6")
+
+    testImplementation("org.assertj:assertj-core:3.27.7")
+
+    testImplementation(platform("org.junit:junit-bom:6.0.3"))
+    testImplementation("org.junit.jupiter:junit-jupiter-api")
+    testRuntimeOnly("org.junit.jupiter:junit-jupiter-engine")
+    testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 
 java {
@@ -88,15 +92,14 @@ tasks.jacocoTestReport {
 }
 
 license {
-    header(rootProject.file("license/HEADER.txt"))
-    newLine(false)
+    header = rootProject.file("license/HEADER.txt")
+    skipExistingHeaders = false
+    strictCheck = true
+    mapping("java", "SLASHSTAR_STYLE")
     ext["year"] = "2018-" + Calendar.getInstance().get(Calendar.YEAR)
     ext["name"] = "Alexey Sosnoviy <labotamy@gmail.com>, Nikita Fedkin <nixel2007@gmail.com>"
     ext["project"] = "1c-syntax utils"
-    exclude("**/*.properties")
-    exclude("**/*.xml")
-    exclude("**/*.json")
-    exclude("**/*.bsl")
+    include("**/*.java")
 }
 
 tasks.javadoc {
