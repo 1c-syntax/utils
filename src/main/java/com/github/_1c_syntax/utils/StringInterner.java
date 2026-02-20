@@ -21,7 +21,7 @@
  */
 package com.github._1c_syntax.utils;
 
-import edu.umd.cs.findbugs.annotations.Nullable;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Реализация интернера для строк

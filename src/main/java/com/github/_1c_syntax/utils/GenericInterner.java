@@ -38,7 +38,7 @@ public class GenericInterner<T> {
    * @return значение из кеша
    */
   public T intern(T object) {
-    var exist = map.putIfAbsent(object, object);
+    T exist = map.putIfAbsent(object, object);
     return (exist == null) ? object : exist;
   }
 

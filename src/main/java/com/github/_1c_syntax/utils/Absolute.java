@@ -21,7 +21,6 @@
  */
 package com.github._1c_syntax.utils;
 
-import lombok.NonNull;
 import lombok.SneakyThrows;
 import lombok.experimental.UtilityClass;
 
@@ -46,7 +45,7 @@ public final class Absolute {
    * @param uri - строковое представление URI
    * @return - полученное значение
    */
-  public static URI uri(@NonNull String uri) {
+  public static URI uri(String uri) {
     try {
       var url = new URL(uri.replace("+", "%2B").replace("%%", "%25%"));
       var decodedPath = URLDecoder.decode(url.getPath(), StandardCharsets.UTF_8);
@@ -72,7 +71,7 @@ public final class Absolute {
    * @param uri - исходный URI
    * @return - полученное значение
    */
-  public static URI uri(@NonNull URI uri) {
+  public static URI uri(URI uri) {
     var decodedUri = URI.create(uri.getScheme() + ":" + encodePath(uri.getSchemeSpecificPart()));
 
     return checkFileAuthorityAndReturnURI(decodedUri);
@@ -84,7 +83,7 @@ public final class Absolute {
    * @param file - исходный файл
    * @return - полученное значение
    */
-  public static URI uri(@NonNull File file) {
+  public static URI uri(File file) {
     return uri(path(file).toUri());
   }
 
@@ -94,7 +93,7 @@ public final class Absolute {
    * @param path - строковое представление пути
    * @return - полученное значение
    */
-  public static Path path(@NonNull String path) {
+  public static Path path(String path) {
     return path(Path.of(path));
   }
 
@@ -104,7 +103,7 @@ public final class Absolute {
    * @param uri - исходное значение URI
    * @return - полученное значение
    */
-  public static Path path(@NonNull URI uri) {
+  public static Path path(URI uri) {
     return path(Path.of(uri(uri)));
   }
 
@@ -114,7 +113,7 @@ public final class Absolute {
    * @param path - исходное значение пути
    * @return - полученное значение
    */
-  public static Path path(@NonNull Path path) {
+  public static Path path(Path path) {
     return path(path.toFile());
   }
 
@@ -125,11 +124,11 @@ public final class Absolute {
    * @return - полученное значение
    */
   @SneakyThrows
-  public static Path path(@NonNull File file) {
+  public static Path path(File file) {
     return file.getCanonicalFile().toPath().toAbsolutePath();
   }
 
-  private static String encodePath(@NonNull String path) {
+  private static String encodePath(String path) {
     return path
       .replace("%", "%25")
       .replace(" ", "%20")
@@ -148,7 +147,7 @@ public final class Absolute {
       ;
   }
 
-  private static URI checkFileAuthorityAndReturnURI(@NonNull URI uri) {
+  private static URI checkFileAuthorityAndReturnURI(URI uri) {
     if ("file".equals(uri.getScheme()) && uri.getAuthority() == null) {
       return path(new File(uri)).toUri();
     }
