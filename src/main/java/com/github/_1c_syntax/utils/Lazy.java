@@ -56,9 +56,11 @@ public final class Lazy<T> {
     final T result = value; // Just one volatile read
     if (result == null) {
       lock.lock();
-      var localResult = maybeCompute(supplier);
-      lock.unlock();
-      return localResult;
+      try {
+        return maybeCompute(supplier);
+      } finally {
+        lock.unlock();
+      }
     }
     return result;
   }
