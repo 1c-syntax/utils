@@ -19,7 +19,7 @@
  * You should have received a copy of the GNU Lesser General Public
  * License along with 1c-syntax utils.
  */
-package com.github._1c_syntax.utils;
+package com.github._1c_syntax.utils.downloader;
 
 /**
  * Канал получения релизов BSL Language Server.

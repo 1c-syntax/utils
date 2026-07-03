@@ -19,7 +19,7 @@
  * You should have received a copy of the GNU Lesser General Public
  * License along with 1c-syntax utils.
  */
-package com.github._1c_syntax.utils;
+package com.github._1c_syntax.utils.downloader;
 
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.compress.archivers.zip.ZipArchiveEntry;
@@ -147,7 +147,7 @@ public class BslLanguageServerDownloader {
     var installed = installedVersion().orElse(null);
 
     if (installed != null && !checkIntervalElapsed()) {
-      LOGGER.debug("Проверка обновлений BSL Language Server пропущена (интервал не истёк)");
+      LOGGER.debug("Skipping BSL Language Server update check (interval not elapsed)");
       return binaryPath(installed);
     }
 
@@ -156,18 +156,18 @@ public class BslLanguageServerDownloader {
       release = latestRelease(channel);
     } catch (IOException e) {
       if (installed != null) {
-        LOGGER.warn("Не удалось получить сведения о релизах BSL Language Server, используется установленная версия {}",
+        LOGGER.warn("Failed to fetch BSL Language Server releases, using installed version {}",
           installed, e);
         touchLastUpdate(installed);
         return binaryPath(installed);
       }
-      throw new IOException("Не удалось получить сведения о релизах BSL Language Server", e);
+      throw new IOException("Failed to fetch BSL Language Server releases", e);
     }
 
     var latestVersion = normalizeVersion(release.getTagName());
 
     if (installed == null || compareVersions(latestVersion, installed) > 0) {
-      LOGGER.info("Загрузка BSL Language Server {}", latestVersion);
+      LOGGER.info("Downloading BSL Language Server {}", latestVersion);
       downloadAndExtract(release, latestVersion);
       cleanupOtherVersions(latestVersion);
       installed = latestVersion;
@@ -209,7 +209,7 @@ public class BslLanguageServerDownloader {
     }
 
     if (release == null) {
-      throw new IOException("У репозитория " + REPOSITORY + " нет подходящих релизов для канала " + channel);
+      throw new IOException("Repository " + REPOSITORY + " has no suitable releases for channel " + channel);
     }
     return release;
   }
@@ -226,7 +226,7 @@ public class BslLanguageServerDownloader {
       .map(asset -> asset.getBrowserDownloadUrl())
       .findFirst()
       .orElseThrow(() -> new IOException(
-        "В релизе BSL Language Server " + version + " нет ассета " + assetName));
+        "BSL Language Server release " + version + " has no asset " + assetName));
 
     Files.createDirectories(installDir);
     var archive = installDir.resolve(version + "-download-" + assetName);
@@ -253,11 +253,11 @@ public class BslLanguageServerDownloader {
     try {
       var response = client.send(request, HttpResponse.BodyHandlers.ofFile(destination));
       if (response.statusCode() != 200) {
-        throw new IOException("Не удалось скачать " + url + ": HTTP " + response.statusCode());
+        throw new IOException("Failed to download " + url + ": HTTP " + response.statusCode());
       }
     } catch (InterruptedException e) {
       Thread.currentThread().interrupt();
-      throw new IOException("Загрузка BSL Language Server прервана", e);
+      throw new IOException("BSL Language Server download was interrupted", e);
     }
   }
 
@@ -269,7 +269,7 @@ public class BslLanguageServerDownloader {
         ZipArchiveEntry entry = entries.nextElement();
         var target = targetDir.resolve(entry.getName()).normalize();
         if (!target.startsWith(targetDir)) {
-          throw new IOException("Некорректная запись в архиве (zip slip): " + entry.getName());
+          throw new IOException("Illegal archive entry (zip slip): " + entry.getName());
         }
         if (entry.isDirectory()) {
           Files.createDirectories(target);
@@ -312,7 +312,7 @@ public class BslLanguageServerDownloader {
         .filter(path -> !path.getFileName().toString().equals(keepVersion))
         .forEach(BslLanguageServerDownloader::deleteQuietly);
     } catch (IOException e) {
-      LOGGER.warn("Не удалось очистить старые версии BSL Language Server в {}", installDir, e);
+      LOGGER.warn("Failed to clean up old BSL Language Server versions in {}", installDir, e);
     }
   }
 
@@ -350,7 +350,7 @@ public class BslLanguageServerDownloader {
       try (var input = Files.newInputStream(infoFile)) {
         properties.load(input);
       } catch (IOException e) {
-        LOGGER.warn("Не удалось прочитать {}", infoFile, e);
+        LOGGER.warn("Failed to read {}", infoFile, e);
       }
     }
     return properties;
@@ -377,7 +377,7 @@ public class BslLanguageServerDownloader {
         properties.store(output, "BSL Language Server install info");
       }
     } catch (IOException e) {
-      LOGGER.warn("Не удалось сохранить сведения об установке BSL Language Server", e);
+      LOGGER.warn("Failed to store BSL Language Server install info", e);
     }
   }
 
@@ -450,7 +450,7 @@ public class BslLanguageServerDownloader {
     try {
       deleteRecursively(path);
     } catch (IOException e) {
-      LOGGER.warn("Не удалось удалить {}", path, e);
+      LOGGER.warn("Failed to delete {}", path, e);
     }
   }
 
