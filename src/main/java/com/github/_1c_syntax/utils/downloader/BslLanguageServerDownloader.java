@@ -30,6 +30,7 @@ import org.kohsuke.github.GHRepository;
 import org.kohsuke.github.GitHub;
 import org.kohsuke.github.GitHubBuilder;
 import org.kohsuke.github.extras.HttpClientGitHubConnector;
+import org.semver4j.Semver;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -402,84 +403,17 @@ public class BslLanguageServerDownloader {
   }
 
   /**
-   * Сравнивает две версии в формате {@code major.minor.patch[-preRelease]}.
-   * Релиз считается новее одноимённого pre-release ({@code 1.0.0 > 1.0.0-rc1}).
+   * Сравнивает две версии по правилам semver: релиз новее одноимённого pre-release, числовые
+   * идентификаторы pre-release сравниваются как числа ({@code 1.0.0-rc.10 > 1.0.0-rc.9}).
+   * Если хотя бы одна строка не парсится как semver — используется лексикографическое сравнение.
    */
   static int compareVersions(String left, String right) {
-    var leftParts = left.split("-", 2);
-    var rightParts = right.split("-", 2);
-
-    var coreCompare = compareCore(leftParts[0], rightParts[0]);
-    if (coreCompare != 0) {
-      return coreCompare;
+    var leftVersion = Semver.parse(normalizeVersion(left));
+    var rightVersion = Semver.parse(normalizeVersion(right));
+    if (leftVersion == null || rightVersion == null) {
+      return normalizeVersion(left).compareTo(normalizeVersion(right));
     }
-
-    var leftPre = leftParts.length > 1 ? leftParts[1] : "";
-    var rightPre = rightParts.length > 1 ? rightParts[1] : "";
-    if (leftPre.isEmpty() && rightPre.isEmpty()) {
-      return 0;
-    }
-    if (leftPre.isEmpty()) {
-      return 1;
-    }
-    if (rightPre.isEmpty()) {
-      return -1;
-    }
-    return comparePreRelease(leftPre, rightPre);
-  }
-
-  /**
-   * Сравнивает pre-release суффиксы по точкам-разделённым идентификаторам: числовые идентификаторы
-   * сравниваются как числа ({@code rc.10 > rc.9}), нечисловые — лексикографически.
-   */
-  private static int comparePreRelease(String left, String right) {
-    var leftIds = left.split("\\.");
-    var rightIds = right.split("\\.");
-    var length = Math.max(leftIds.length, rightIds.length);
-    for (var i = 0; i < length; i++) {
-      if (i >= leftIds.length) {
-        return -1;
-      }
-      if (i >= rightIds.length) {
-        return 1;
-      }
-      var leftId = leftIds[i];
-      var rightId = rightIds[i];
-      var bothNumeric = isNumeric(leftId) && isNumeric(rightId);
-      var comparison = bothNumeric
-        ? Integer.compare(parseInt(leftId), parseInt(rightId))
-        : leftId.compareTo(rightId);
-      if (comparison != 0) {
-        return comparison;
-      }
-    }
-    return 0;
-  }
-
-  private static boolean isNumeric(String value) {
-    return !value.isEmpty() && value.chars().allMatch(Character::isDigit);
-  }
-
-  private static int compareCore(String left, String right) {
-    var leftNumbers = left.split("\\.");
-    var rightNumbers = right.split("\\.");
-    var length = Math.max(leftNumbers.length, rightNumbers.length);
-    for (var i = 0; i < length; i++) {
-      var leftValue = i < leftNumbers.length ? parseInt(leftNumbers[i]) : 0;
-      var rightValue = i < rightNumbers.length ? parseInt(rightNumbers[i]) : 0;
-      if (leftValue != rightValue) {
-        return Integer.compare(leftValue, rightValue);
-      }
-    }
-    return 0;
-  }
-
-  private static int parseInt(String value) {
-    try {
-      return Integer.parseInt(value.strip());
-    } catch (NumberFormatException e) {
-      return 0;
-    }
+    return leftVersion.compareTo(rightVersion);
   }
 
   private static Os currentOs() {
