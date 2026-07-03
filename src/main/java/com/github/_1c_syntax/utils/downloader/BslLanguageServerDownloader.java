@@ -29,6 +29,7 @@ import org.kohsuke.github.GHRelease;
 import org.kohsuke.github.GHRepository;
 import org.kohsuke.github.GitHub;
 import org.kohsuke.github.GitHubBuilder;
+import org.kohsuke.github.extras.HttpClientGitHubConnector;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -74,6 +75,8 @@ public class BslLanguageServerDownloader {
   private static final String INFO_VERSION = "version";
   private static final String INFO_LAST_UPDATE = "lastUpdate";
   private static final Duration DEFAULT_CHECK_INTERVAL = Duration.ofMinutes(8);
+  private static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(30);
+  private static final Duration DOWNLOAD_TIMEOUT = Duration.ofMinutes(10);
 
   private static final boolean POSIX =
     FileSystems.getDefault().supportedFileAttributeViews().contains("posix");
@@ -168,9 +171,19 @@ public class BslLanguageServerDownloader {
 
     if (installed == null || compareVersions(latestVersion, installed) > 0) {
       LOGGER.info("Downloading BSL Language Server {}", latestVersion);
-      downloadAndExtract(release, latestVersion);
-      cleanupOtherVersions(latestVersion);
-      installed = latestVersion;
+      try {
+        downloadAndExtract(release, latestVersion);
+        cleanupOtherVersions(latestVersion);
+        installed = latestVersion;
+      } catch (IOException e) {
+        if (installed == null) {
+          throw e;
+        }
+        LOGGER.warn("Failed to download BSL Language Server {}, using installed version {}",
+          latestVersion, installed, e);
+        touchLastUpdate(installed);
+        return binaryPath(installed);
+      }
     }
 
     writeServerInfo(installed);
@@ -192,17 +205,23 @@ public class BslLanguageServerDownloader {
   }
 
   private GHRelease latestRelease(BslLanguageServerReleaseChannel channel) throws IOException {
-    GitHub github = (token == null || token.isBlank())
-      ? GitHub.connectAnonymously()
-      : new GitHubBuilder().withOAuthToken(token).build();
+    var httpClient = HttpClient.newBuilder()
+      .connectTimeout(CONNECT_TIMEOUT)
+      .build();
+    var builder = new GitHubBuilder().withConnector(new HttpClientGitHubConnector(httpClient));
+    if (token != null && !token.isBlank()) {
+      builder.withOAuthToken(token);
+    }
+    GitHub github = builder.build();
 
     GHRepository repository = github.getRepository(REPOSITORY);
 
     GHRelease release;
     if (channel == BslLanguageServerReleaseChannel.PRERELEASE) {
+      // GitHub отдаёт релизы newest-first — берём первый не-draft.
       release = repository.listReleases().toList().stream()
         .filter(it -> !it.isDraft())
-        .max(Comparator.comparingLong(BslLanguageServerDownloader::publishedAt))
+        .findFirst()
         .orElse(null);
     } else {
       release = repository.getLatestRelease();
@@ -212,11 +231,6 @@ public class BslLanguageServerDownloader {
       throw new IOException("Repository " + REPOSITORY + " has no suitable releases for channel " + channel);
     }
     return release;
-  }
-
-  private static long publishedAt(GHRelease release) {
-    var published = release.getPublished_at();
-    return published == null ? 0L : published.getTime();
   }
 
   private void downloadAndExtract(GHRelease release, String version) throws IOException {
@@ -244,10 +258,11 @@ public class BslLanguageServerDownloader {
   private void download(String url, Path destination) throws IOException {
     var client = HttpClient.newBuilder()
       .followRedirects(HttpClient.Redirect.NORMAL)
-      .connectTimeout(Duration.ofSeconds(30))
+      .connectTimeout(CONNECT_TIMEOUT)
       .build();
     var request = HttpRequest.newBuilder(URI.create(url))
       .header("User-Agent", "1c-syntax-utils")
+      .timeout(DOWNLOAD_TIMEOUT)
       .GET()
       .build();
     try {
@@ -410,7 +425,39 @@ public class BslLanguageServerDownloader {
     if (rightPre.isEmpty()) {
       return -1;
     }
-    return leftPre.compareTo(rightPre);
+    return comparePreRelease(leftPre, rightPre);
+  }
+
+  /**
+   * Сравнивает pre-release суффиксы по точкам-разделённым идентификаторам: числовые идентификаторы
+   * сравниваются как числа ({@code rc.10 > rc.9}), нечисловые — лексикографически.
+   */
+  private static int comparePreRelease(String left, String right) {
+    var leftIds = left.split("\\.");
+    var rightIds = right.split("\\.");
+    var length = Math.max(leftIds.length, rightIds.length);
+    for (var i = 0; i < length; i++) {
+      if (i >= leftIds.length) {
+        return -1;
+      }
+      if (i >= rightIds.length) {
+        return 1;
+      }
+      var leftId = leftIds[i];
+      var rightId = rightIds[i];
+      var bothNumeric = isNumeric(leftId) && isNumeric(rightId);
+      var comparison = bothNumeric
+        ? Integer.compare(parseInt(leftId), parseInt(rightId))
+        : leftId.compareTo(rightId);
+      if (comparison != 0) {
+        return comparison;
+      }
+    }
+    return 0;
+  }
+
+  private static boolean isNumeric(String value) {
+    return !value.isEmpty() && value.chars().allMatch(Character::isDigit);
   }
 
   private static int compareCore(String left, String right) {

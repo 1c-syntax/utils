@@ -48,6 +48,8 @@ class BslLanguageServerDownloaderTest {
     assertThat(BslLanguageServerDownloader.compareVersions("1.0.0", "1.0.0-rc.1")).isPositive();
     assertThat(BslLanguageServerDownloader.compareVersions("1.0.0-rc.1", "1.0.0")).isNegative();
     assertThat(BslLanguageServerDownloader.compareVersions("1.0.0-rc.2", "1.0.0-rc.1")).isPositive();
+    assertThat(BslLanguageServerDownloader.compareVersions("1.0.0-rc.10", "1.0.0-rc.9")).isPositive();
+    assertThat(BslLanguageServerDownloader.compareVersions("1.0.0-rc.9", "1.0.0-rc.10")).isNegative();
   }
 
   @Test
