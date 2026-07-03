@@ -291,17 +291,17 @@ public class BslLanguageServerDownloader {
     Files.setPosixFilePermissions(path, permissionsFromMode(unixMode));
   }
 
+  /**
+   * Преобразует unix-режим из zip в набор прав, ограниченный владельцем: групповые и «прочие»
+   * права намеренно не выдаются, чтобы не создавать слишком свободный доступ. Владельцу всегда
+   * доступны чтение и запись, бит исполнения выставляется, если он был установлен в архиве
+   * (нужно для launcher'а и бинарей внутри native-image).
+   */
   private static Set<PosixFilePermission> permissionsFromMode(int mode) {
-    var permissions = EnumSet.noneOf(PosixFilePermission.class);
-    if ((mode & 0400) != 0) permissions.add(PosixFilePermission.OWNER_READ);
-    if ((mode & 0200) != 0) permissions.add(PosixFilePermission.OWNER_WRITE);
-    if ((mode & 0100) != 0) permissions.add(PosixFilePermission.OWNER_EXECUTE);
-    if ((mode & 0040) != 0) permissions.add(PosixFilePermission.GROUP_READ);
-    if ((mode & 0020) != 0) permissions.add(PosixFilePermission.GROUP_WRITE);
-    if ((mode & 0010) != 0) permissions.add(PosixFilePermission.GROUP_EXECUTE);
-    if ((mode & 0004) != 0) permissions.add(PosixFilePermission.OTHERS_READ);
-    if ((mode & 0002) != 0) permissions.add(PosixFilePermission.OTHERS_WRITE);
-    if ((mode & 0001) != 0) permissions.add(PosixFilePermission.OTHERS_EXECUTE);
+    var permissions = EnumSet.of(PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_WRITE);
+    if ((mode & 0111) != 0) {
+      permissions.add(PosixFilePermission.OWNER_EXECUTE);
+    }
     return permissions;
   }
 
