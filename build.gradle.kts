@@ -47,6 +47,11 @@ repositories {
 dependencies {
     api("org.jspecify:jspecify:1.0.0")
 
+    // Загрузчик BSL Language Server
+    implementation("org.slf4j:slf4j-api:2.0.17")
+    implementation("org.kohsuke:github-api:1.327")
+    implementation("org.apache.commons:commons-compress:1.28.0")
+
     testImplementation("org.assertj:assertj-core:3.27.7")
 
     testImplementation(platform("org.junit:junit-bom:6.1.1"))
