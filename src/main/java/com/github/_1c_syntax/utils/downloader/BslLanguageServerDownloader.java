@@ -87,46 +87,33 @@ public class BslLanguageServerDownloader {
   private final HttpClient httpClient;
 
   /**
+   * Создаёт загрузчик, берущий релизы с GitHub через общий HTTP-клиент.
+   *
    * @param installDir каталог установки сервера; в нём создаются подпапки с версиями
    *                   и файл {@code SERVER-INFO}
-   */
-  public BslLanguageServerDownloader(Path installDir) {
-    this(installDir, null);
-  }
-
-  /**
-   * @param installDir каталог установки сервера
    * @param token      GitHub OAuth-токен для обхода лимитов анонимного API; может быть {@code null}
    */
   public BslLanguageServerDownloader(Path installDir, @Nullable String token) {
-    this(installDir, token, DEFAULT_CHECK_INTERVAL);
-  }
-
-  /**
-   * @param installDir    каталог установки сервера
-   * @param token         GitHub OAuth-токен; может быть {@code null}
-   * @param checkInterval минимальный интервал между обращениями к GitHub API за новой версией
-   */
-  public BslLanguageServerDownloader(Path installDir, @Nullable String token, Duration checkInterval) {
-    this(installDir, checkInterval, token, defaultHttpClient());
+    this(installDir, DEFAULT_CHECK_INTERVAL, defaultHttpClient(), token);
   }
 
   private BslLanguageServerDownloader(Path installDir, Duration checkInterval,
-                                      @Nullable String token, HttpClient httpClient) {
+                                      HttpClient httpClient, @Nullable String token) {
     this(installDir, checkInterval, new GitHubReleaseCatalog(httpClient, token), httpClient);
   }
 
   /**
-   * Конструктор с явными зависимостями — для тестов и нестандартных сценариев: позволяет
-   * подменить источник релизов и HTTP-клиент, чтобы прогонять весь поток скачивания без сети.
+   * Создаёт загрузчик с явными зависимостями: источником сведений о релизах и HTTP-клиентом
+   * для скачивания ассета. Так их можно подменить (в т.ч. замокать) и прогнать весь поток
+   * скачивания без обращения к сети.
    *
    * @param installDir     каталог установки сервера
    * @param checkInterval  минимальный интервал между обращениями за новой версией
    * @param releaseCatalog источник сведений о релизах
    * @param httpClient     HTTP-клиент для скачивания ассета
    */
-  BslLanguageServerDownloader(Path installDir, Duration checkInterval,
-                              ReleaseCatalog releaseCatalog, HttpClient httpClient) {
+  public BslLanguageServerDownloader(Path installDir, Duration checkInterval,
+                                     ReleaseCatalog releaseCatalog, HttpClient httpClient) {
     this.installDir = installDir.toAbsolutePath();
     this.checkInterval = checkInterval;
     this.releaseCatalog = releaseCatalog;

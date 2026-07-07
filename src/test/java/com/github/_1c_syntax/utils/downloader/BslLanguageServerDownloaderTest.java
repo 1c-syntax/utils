@@ -21,7 +21,6 @@
  */
 package com.github._1c_syntax.utils.downloader;
 
-import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.DisabledOnOs;
 import org.junit.jupiter.api.condition.OS;
@@ -30,8 +29,10 @@ import org.junit.jupiter.api.io.TempDir;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.net.InetSocketAddress;
+import java.io.InputStream;
 import java.net.http.HttpClient;
+import java.net.http.HttpHeaders;
+import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -45,6 +46,10 @@ import java.util.zip.ZipOutputStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 class BslLanguageServerDownloaderTest {
 
@@ -68,7 +73,7 @@ class BslLanguageServerDownloaderTest {
 
   @Test
   void installedVersionIsEmptyWhenNothingInstalled(@TempDir Path installDir) {
-    var downloader = new BslLanguageServerDownloader(installDir);
+    var downloader = new BslLanguageServerDownloader(installDir, null);
     assertThat(downloader.installedVersion()).isEmpty();
     assertThat(downloader.installedBinary()).isEmpty();
   }
@@ -77,7 +82,7 @@ class BslLanguageServerDownloaderTest {
   void installedVersionIsReadFromServerInfo(@TempDir Path installDir) throws IOException {
     writeServerInfo(installDir, "1.0.2");
 
-    var downloader = new BslLanguageServerDownloader(installDir);
+    var downloader = new BslLanguageServerDownloader(installDir, null);
     assertThat(downloader.installedVersion()).contains("1.0.2");
   }
 
@@ -92,7 +97,7 @@ class BslLanguageServerDownloaderTest {
     Files.createDirectories(binary.getParent());
     Files.createFile(binary);
 
-    var downloader = new BslLanguageServerDownloader(installDir);
+    var downloader = new BslLanguageServerDownloader(installDir, null);
     assertThat(downloader.installedBinary()).contains(binary);
   }
 
@@ -171,44 +176,32 @@ class BslLanguageServerDownloaderTest {
   @Test
   void downloadIfNeededDownloadsExtractsAndRecordsVersion(@TempDir Path installDir) throws IOException {
     var archive = zipWithLaunchers(300 * 1024);
-    var server = startServer(archive);
-    try {
-      var catalog = new FakeCatalog(
-        new ReleaseCatalog.ReleaseInfo("v1.2.3", allOsAssets(assetUrl(server))));
-      var downloader = new BslLanguageServerDownloader(
-        installDir, Duration.ZERO, catalog, testHttpClient());
+    var catalog = new FakeCatalog(new ReleaseCatalog.ReleaseInfo("v1.2.3", allOsAssets()));
+    var downloader = new BslLanguageServerDownloader(
+      installDir, Duration.ZERO, catalog, httpClientReturning(archive));
 
-      var binary = downloader.downloadIfNeeded(BslLanguageServerReleaseChannel.STABLE);
+    var binary = downloader.downloadIfNeeded(BslLanguageServerReleaseChannel.STABLE);
 
-      assertThat(binary).exists();
-      assertThat(binary).startsWith(installDir.resolve("1.2.3"));
-      assertThat(downloader.installedVersion()).contains("1.2.3");
-    } finally {
-      server.stop(0);
-    }
+    assertThat(binary).exists();
+    assertThat(binary).startsWith(installDir.resolve("1.2.3"));
+    assertThat(downloader.installedVersion()).contains("1.2.3");
   }
 
   @Test
   void downloadIfNeededReportsProgressForTheAsset(@TempDir Path installDir) throws IOException {
     var archive = zipWithLaunchers(300 * 1024);
-    var server = startServer(archive);
-    try {
-      var catalog = new FakeCatalog(
-        new ReleaseCatalog.ReleaseInfo("1.0.0", allOsAssets(assetUrl(server))));
-      var downloader = new BslLanguageServerDownloader(
-        installDir, Duration.ZERO, catalog, testHttpClient());
-      var progress = new ArrayList<long[]>();
+    var catalog = new FakeCatalog(new ReleaseCatalog.ReleaseInfo("1.0.0", allOsAssets()));
+    var downloader = new BslLanguageServerDownloader(
+      installDir, Duration.ZERO, catalog, httpClientReturning(archive));
+    var progress = new ArrayList<long[]>();
 
-      downloader.downloadIfNeeded(BslLanguageServerReleaseChannel.STABLE,
-        (bytesRead, totalBytes) -> progress.add(new long[]{bytesRead, totalBytes}));
+    downloader.downloadIfNeeded(BslLanguageServerReleaseChannel.STABLE,
+      (bytesRead, totalBytes) -> progress.add(new long[]{bytesRead, totalBytes}));
 
-      assertThat(progress).isNotEmpty();
-      var last = progress.get(progress.size() - 1);
-      assertThat(last[0]).isEqualTo(archive.length);
-      assertThat(last[1]).isEqualTo(archive.length);
-    } finally {
-      server.stop(0);
-    }
+    assertThat(progress).isNotEmpty();
+    var last = progress.get(progress.size() - 1);
+    assertThat(last[0]).isEqualTo(archive.length);
+    assertThat(last[1]).isEqualTo(archive.length);
   }
 
   @Test
@@ -216,7 +209,7 @@ class BslLanguageServerDownloaderTest {
     writeServerInfoAt(installDir, "1.0.0", System.currentTimeMillis());
     var catalog = new ThrowingCatalog();
     var downloader = new BslLanguageServerDownloader(
-      installDir, Duration.ofMinutes(8), catalog, testHttpClient());
+      installDir, Duration.ofMinutes(8), catalog, unusedHttpClient());
 
     var binary = downloader.downloadIfNeeded(BslLanguageServerReleaseChannel.STABLE);
 
@@ -229,7 +222,7 @@ class BslLanguageServerDownloaderTest {
     writeServerInfo(installDir, "1.0.0");
     var catalog = new ThrowingCatalog();
     var downloader = new BslLanguageServerDownloader(
-      installDir, Duration.ZERO, catalog, testHttpClient());
+      installDir, Duration.ZERO, catalog, unusedHttpClient());
 
     var binary = downloader.downloadIfNeeded(BslLanguageServerReleaseChannel.STABLE);
 
@@ -241,7 +234,7 @@ class BslLanguageServerDownloaderTest {
   void downloadIfNeededThrowsWhenNothingInstalledAndCatalogFails(@TempDir Path installDir) {
     var catalog = new ThrowingCatalog();
     var downloader = new BslLanguageServerDownloader(
-      installDir, Duration.ZERO, catalog, testHttpClient());
+      installDir, Duration.ZERO, catalog, unusedHttpClient());
 
     assertThatThrownBy(() -> downloader.downloadIfNeeded(BslLanguageServerReleaseChannel.STABLE))
       .isInstanceOf(IOException.class);
@@ -252,35 +245,41 @@ class BslLanguageServerDownloaderTest {
     writeServerInfo(installDir, "1.0.0");
     var catalog = new RecordingCatalog(new ReleaseCatalog.ReleaseInfo("1.0.0", Map.of()));
     var downloader = new BslLanguageServerDownloader(
-      installDir, Duration.ZERO, catalog, testHttpClient());
+      installDir, Duration.ZERO, catalog, unusedHttpClient());
 
     downloader.downloadIfNeeded(BslLanguageServerReleaseChannel.PRERELEASE);
 
     assertThat(catalog.requestedChannel).isEqualTo(BslLanguageServerReleaseChannel.PRERELEASE);
   }
 
-  private static HttpClient testHttpClient() {
-    // newBuilder() без .proxy() ходит напрямую — то, что нужно для локального сервера.
-    return HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(30)).build();
+  /**
+   * Мок {@link HttpClient}, отдающий на любой {@code send} ответ 200 с телом {@code body} и
+   * заголовком {@code Content-Length}. Заменяет реальную сеть в тестах скачивания.
+   */
+  @SuppressWarnings("unchecked")
+  private static HttpClient httpClientReturning(byte[] body) throws IOException {
+    HttpResponse<InputStream> response = mock(HttpResponse.class);
+    when(response.statusCode()).thenReturn(200);
+    when(response.headers()).thenReturn(HttpHeaders.of(
+      Map.of("Content-Length", List.of(String.valueOf(body.length))), (name, value) -> true));
+    when(response.body()).thenReturn(new ByteArrayInputStream(body));
+
+    var client = mock(HttpClient.class);
+    try {
+      // doReturn — без дженериков, чтобы не спорить с выводом типа T у send(...).
+      doReturn(response).when(client).send(any(), any());
+    } catch (IOException | InterruptedException e) {
+      throw new IllegalStateException(e); // не бывает: это настройка мока, а не реальный вызов
+    }
+    return client;
   }
 
-  private static HttpServer startServer(byte[] body) throws IOException {
-    var server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
-    server.createContext("/asset.zip", exchange -> {
-      exchange.sendResponseHeaders(200, body.length);
-      try (var output = exchange.getResponseBody()) {
-        output.write(body);
-      }
-    });
-    server.start();
-    return server;
+  private static HttpClient unusedHttpClient() {
+    return mock(HttpClient.class);
   }
 
-  private static String assetUrl(HttpServer server) {
-    return "http://127.0.0.1:" + server.getAddress().getPort() + "/asset.zip";
-  }
-
-  private static Map<String, String> allOsAssets(String url) {
+  private static Map<String, String> allOsAssets() {
+    var url = "https://example.invalid/asset.zip"; // мок игнорирует URL
     return Map.of(
       "bsl-language-server_win.zip", url,
       "bsl-language-server_mac.zip", url,

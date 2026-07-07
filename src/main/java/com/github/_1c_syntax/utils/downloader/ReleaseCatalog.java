@@ -29,7 +29,7 @@ import java.util.Map;
  * конкретного транспорта (GitHub API), чтобы {@link BslLanguageServerDownloader} можно было
  * тестировать без обращения к сети.
  */
-interface ReleaseCatalog {
+public interface ReleaseCatalog {
 
   /**
    * Возвращает сведения о последнем релизе выбранного канала.
