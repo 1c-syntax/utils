@@ -108,8 +108,8 @@ class BslLanguageServerDownloaderTest {
 
   @Test
   void copyToFileReportsProgressAcrossMultipleChunks(@TempDir Path installDir) throws IOException {
-    // Больше буфера copyToFile (16 КБ), чтобы цикл чтения выполнился несколько раз.
-    var payload = new byte[40 * 1024];
+    // Больше буфера copyToFile, чтобы цикл чтения выполнился несколько раз.
+    var payload = new byte[1024 * 1024];
     for (int i = 0; i < payload.length; i++) {
       payload[i] = (byte) i;
     }

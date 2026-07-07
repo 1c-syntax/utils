@@ -80,6 +80,9 @@ public class BslLanguageServerDownloader {
   private static final Duration DEFAULT_CHECK_INTERVAL = Duration.ofMinutes(8);
   private static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(30);
   private static final Duration DOWNLOAD_TIMEOUT = Duration.ofMinutes(10);
+  // Крупнее дефолта JDK (16 КБ у InputStream.transferTo): архивы сервера — десятки-сотни МБ,
+  // так меньше syscall'ов на чтение/запись и реже дёргается прогресс-колбэк.
+  private static final int DOWNLOAD_BUFFER_SIZE = 256 * 1024;
 
   private static final boolean POSIX =
     FileSystems.getDefault().supportedFileAttributeViews().contains("posix");
@@ -325,7 +328,7 @@ public class BslLanguageServerDownloader {
 
   static void copyToFile(InputStream source, Path destination, long totalBytes,
                          DownloadProgressListener progressListener) throws IOException {
-    var buffer = new byte[16 * 1024];
+    var buffer = new byte[DOWNLOAD_BUFFER_SIZE];
     long readTotal = 0;
     try (var input = source; var output = Files.newOutputStream(destination)) {
       progressListener.onProgress(0, totalBytes);
