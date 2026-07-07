@@ -299,32 +299,23 @@ public class BslLanguageServerDownloader {
         }
       }
       var totalBytes = response.headers().firstValueAsLong("Content-Length").orElse(-1L);
-      copyBodyWithDeadline(response.body(), destination, totalBytes, progressListener);
+      // Владелец потока — этот блок (здесь взят response.body()), он же его и закрывает.
+      // Тело читается лениво, поэтому request.timeout его не покрывает: по дедлайну сторож
+      // закрывает поток — единственный способ разбудить заблокированный read(). При штатном
+      // завершении сторож отменяется. copyToFile поток не закрывает.
+      try (var body = response.body()) {
+        var watchdog = CompletableFuture.runAsync(
+          () -> closeQuietly(body),
+          CompletableFuture.delayedExecutor(DOWNLOAD_TIMEOUT.toMillis(), TimeUnit.MILLISECONDS));
+        try {
+          copyToFile(body, destination, totalBytes, progressListener);
+        } finally {
+          watchdog.cancel(false);
+        }
+      }
     } catch (InterruptedException e) {
       Thread.currentThread().interrupt();
       throw new IOException("BSL Language Server download was interrupted", e);
-    }
-  }
-
-  /**
-   * Копирует тело ответа в файл, ограничивая общую длительность загрузки {@link #DOWNLOAD_TIMEOUT}.
-   *
-   * <p>С {@code BodyHandlers.ofInputStream()} таймаут запроса покрывает лишь ожидание заголовков,
-   * а тело читается лениво в {@link #copyToFile}. Чтобы «зависшее» на середине соединение не
-   * блокировало загрузку навсегда, сторож по истечении дедлайна закрывает поток — тогда читающий
-   * {@code read()} прерывается исключением. При успешном завершении сторож отменяется.
-   */
-  private static void copyBodyWithDeadline(InputStream body, Path destination, long totalBytes,
-                                           DownloadProgressListener progressListener) throws IOException {
-    // Единственный владелец потока — этот try (body). Вотчдог по таймауту лишь закрывает поток,
-    // чтобы прервать зависшее чтение; при штатном завершении он отменяется и не выполняется.
-    var watchdog = CompletableFuture.runAsync(
-      () -> closeQuietly(body),
-      CompletableFuture.delayedExecutor(DOWNLOAD_TIMEOUT.toMillis(), TimeUnit.MILLISECONDS));
-    try (body) {
-      copyToFile(body, destination, totalBytes, progressListener);
-    } finally {
-      watchdog.cancel(false);
     }
   }
 
