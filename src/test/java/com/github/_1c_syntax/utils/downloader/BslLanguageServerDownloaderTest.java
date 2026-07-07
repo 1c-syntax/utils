@@ -129,6 +129,22 @@ class BslLanguageServerDownloaderTest {
   }
 
   @Test
+  void copyToFileLeavesSourceOpenForCaller(@TempDir Path installDir) throws IOException {
+    var closed = new java.util.concurrent.atomic.AtomicInteger();
+    var source = new ByteArrayInputStream(new byte[]{1, 2, 3}) {
+      @Override
+      public void close() {
+        closed.incrementAndGet();
+      }
+    };
+
+    BslLanguageServerDownloader.copyToFile(
+      source, installDir.resolve("asset.bin"), 3, DownloadProgressListener.NONE);
+
+    assertThat(closed.get()).isZero();
+  }
+
+  @Test
   void copyToFilePropagatesUnknownTotalSize(@TempDir Path installDir) throws IOException {
     var destination = installDir.resolve("asset.bin");
     List<Long> totals = new ArrayList<>();

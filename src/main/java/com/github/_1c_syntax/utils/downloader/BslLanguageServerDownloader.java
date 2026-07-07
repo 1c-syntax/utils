@@ -316,24 +316,30 @@ public class BslLanguageServerDownloader {
    */
   private static void copyBodyWithDeadline(InputStream body, Path destination, long totalBytes,
                                            DownloadProgressListener progressListener) throws IOException {
+    // Единственный владелец потока — этот try (body). Вотчдог по таймауту лишь закрывает поток,
+    // чтобы прервать зависшее чтение; при штатном завершении он отменяется и не выполняется.
     var watchdog = CompletableFuture.runAsync(
       () -> closeQuietly(body),
       CompletableFuture.delayedExecutor(DOWNLOAD_TIMEOUT.toMillis(), TimeUnit.MILLISECONDS));
-    try {
+    try (body) {
       copyToFile(body, destination, totalBytes, progressListener);
     } finally {
       watchdog.cancel(false);
     }
   }
 
+  /**
+   * Копирует {@code source} в файл, сообщая о прогрессе. Поток {@code source} не закрывает —
+   * этим владеет вызывающий код.
+   */
   static void copyToFile(InputStream source, Path destination, long totalBytes,
                          DownloadProgressListener progressListener) throws IOException {
     var buffer = new byte[DOWNLOAD_BUFFER_SIZE];
     long readTotal = 0;
-    try (var input = source; var output = Files.newOutputStream(destination)) {
+    try (var output = Files.newOutputStream(destination)) {
       progressListener.onProgress(0, totalBytes);
       int read;
-      while ((read = input.read(buffer)) != -1) {
+      while ((read = source.read(buffer)) != -1) {
         output.write(buffer, 0, read);
         readTotal += read;
         progressListener.onProgress(readTotal, totalBytes);
