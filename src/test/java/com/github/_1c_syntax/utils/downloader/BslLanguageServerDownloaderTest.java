@@ -123,7 +123,7 @@ class BslLanguageServerDownloaderTest {
       (bytesRead, totalBytes) -> progress.add(new long[]{bytesRead, totalBytes}));
 
     assertThat(Files.readAllBytes(destination)).isEqualTo(payload);
-    assertThat(progress.size()).isGreaterThan(2);
+    assertThat(progress).hasSizeGreaterThan(2);
     assertThat(progress).map(it -> it[0]).isSorted();
     assertThat(progress.get(progress.size() - 1)).containsExactly(payload.length, payload.length);
   }
