@@ -25,11 +25,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.compress.archivers.zip.ZipArchiveEntry;
 import org.apache.commons.compress.archivers.zip.ZipFile;
 import org.jspecify.annotations.Nullable;
-import org.kohsuke.github.GHRelease;
-import org.kohsuke.github.GHRepository;
-import org.kohsuke.github.GitHub;
-import org.kohsuke.github.GitHubBuilder;
-import org.kohsuke.github.extras.HttpClientGitHubConnector;
 import org.semver4j.Semver;
 
 import java.io.IOException;
@@ -73,7 +68,6 @@ import static java.nio.file.StandardCopyOption.REPLACE_EXISTING;
 @Slf4j
 public class BslLanguageServerDownloader {
 
-  private static final String REPOSITORY = "1c-syntax/bsl-language-server";
   private static final String SERVER_INFO_FILE = "SERVER-INFO";
   private static final String INFO_VERSION = "version";
   private static final String INFO_LAST_UPDATE = "lastUpdate";
@@ -88,8 +82,9 @@ public class BslLanguageServerDownloader {
     FileSystems.getDefault().supportedFileAttributeViews().contains("posix");
 
   private final Path installDir;
-  private final @Nullable String token;
   private final Duration checkInterval;
+  private final ReleaseCatalog releaseCatalog;
+  private final HttpClient httpClient;
 
   /**
    * @param installDir каталог установки сервера; в нём создаются подпапки с версиями
@@ -113,9 +108,36 @@ public class BslLanguageServerDownloader {
    * @param checkInterval минимальный интервал между обращениями к GitHub API за новой версией
    */
   public BslLanguageServerDownloader(Path installDir, @Nullable String token, Duration checkInterval) {
+    this(installDir, checkInterval, token, defaultHttpClient());
+  }
+
+  private BslLanguageServerDownloader(Path installDir, Duration checkInterval,
+                                      @Nullable String token, HttpClient httpClient) {
+    this(installDir, checkInterval, new GitHubReleaseCatalog(httpClient, token), httpClient);
+  }
+
+  /**
+   * Конструктор с явными зависимостями — для тестов и нестандартных сценариев: позволяет
+   * подменить источник релизов и HTTP-клиент, чтобы прогонять весь поток скачивания без сети.
+   *
+   * @param installDir     каталог установки сервера
+   * @param checkInterval  минимальный интервал между обращениями за новой версией
+   * @param releaseCatalog источник сведений о релизах
+   * @param httpClient     HTTP-клиент для скачивания ассета
+   */
+  BslLanguageServerDownloader(Path installDir, Duration checkInterval,
+                              ReleaseCatalog releaseCatalog, HttpClient httpClient) {
     this.installDir = installDir.toAbsolutePath();
-    this.token = token;
     this.checkInterval = checkInterval;
+    this.releaseCatalog = releaseCatalog;
+    this.httpClient = httpClient;
+  }
+
+  private static HttpClient defaultHttpClient() {
+    return HttpClient.newBuilder()
+      .followRedirects(HttpClient.Redirect.NORMAL)
+      .connectTimeout(CONNECT_TIMEOUT)
+      .build();
   }
 
   /**
@@ -178,9 +200,9 @@ public class BslLanguageServerDownloader {
       return binaryPath(installed);
     }
 
-    GHRelease release;
+    ReleaseCatalog.ReleaseInfo release;
     try {
-      release = latestRelease(channel);
+      release = releaseCatalog.latestRelease(channel);
     } catch (IOException e) {
       if (installed != null) {
         LOGGER.warn("Failed to fetch BSL Language Server releases, using installed version {}",
@@ -191,7 +213,7 @@ public class BslLanguageServerDownloader {
       throw new IOException("Failed to fetch BSL Language Server releases", e);
     }
 
-    var latestVersion = normalizeVersion(release.getTagName());
+    var latestVersion = normalizeVersion(release.version());
 
     if (installed == null || compareVersions(latestVersion, installed) > 0) {
       LOGGER.info("Downloading BSL Language Server {}", latestVersion);
@@ -228,44 +250,13 @@ public class BslLanguageServerDownloader {
     }
   }
 
-  private GHRelease latestRelease(BslLanguageServerReleaseChannel channel) throws IOException {
-    var httpClient = HttpClient.newBuilder()
-      .connectTimeout(CONNECT_TIMEOUT)
-      .build();
-    var builder = new GitHubBuilder().withConnector(new HttpClientGitHubConnector(httpClient));
-    if (token != null && !token.isBlank()) {
-      builder.withOAuthToken(token);
-    }
-    GitHub github = builder.build();
-
-    GHRepository repository = github.getRepository(REPOSITORY);
-
-    GHRelease release;
-    if (channel == BslLanguageServerReleaseChannel.PRERELEASE) {
-      // GitHub отдаёт релизы newest-first — берём первый не-draft.
-      release = repository.listReleases().toList().stream()
-        .filter(it -> !it.isDraft())
-        .findFirst()
-        .orElse(null);
-    } else {
-      release = repository.getLatestRelease();
-    }
-
-    if (release == null) {
-      throw new IOException("Repository " + REPOSITORY + " has no suitable releases for channel " + channel);
-    }
-    return release;
-  }
-
-  private void downloadAndExtract(GHRelease release, String version,
+  private void downloadAndExtract(ReleaseCatalog.ReleaseInfo release, String version,
                                   DownloadProgressListener progressListener) throws IOException {
     var assetName = assetName();
-    var downloadUrl = release.listAssets().toList().stream()
-      .filter(asset -> asset.getName().equals(assetName))
-      .map(asset -> asset.getBrowserDownloadUrl())
-      .findFirst()
-      .orElseThrow(() -> new IOException(
-        "BSL Language Server release " + version + " has no asset " + assetName));
+    var downloadUrl = release.assetDownloadUrls().get(assetName);
+    if (downloadUrl == null) {
+      throw new IOException("BSL Language Server release " + version + " has no asset " + assetName);
+    }
 
     Files.createDirectories(installDir);
     var archive = installDir.resolve(version + "-download-" + assetName);
@@ -282,17 +273,13 @@ public class BslLanguageServerDownloader {
 
   private void download(String url, Path destination, DownloadProgressListener progressListener)
     throws IOException {
-    var client = HttpClient.newBuilder()
-      .followRedirects(HttpClient.Redirect.NORMAL)
-      .connectTimeout(CONNECT_TIMEOUT)
-      .build();
     var request = HttpRequest.newBuilder(URI.create(url))
       .header("User-Agent", "1c-syntax-utils")
       .timeout(DOWNLOAD_TIMEOUT)
       .GET()
       .build();
     try {
-      var response = client.send(request, HttpResponse.BodyHandlers.ofInputStream());
+      var response = httpClient.send(request, HttpResponse.BodyHandlers.ofInputStream());
       if (response.statusCode() != 200) {
         try (var ignored = response.body()) {
           throw new IOException("Failed to download " + url + ": HTTP " + response.statusCode());

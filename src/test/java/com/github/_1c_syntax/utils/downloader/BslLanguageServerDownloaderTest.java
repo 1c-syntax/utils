@@ -21,20 +21,30 @@
  */
 package com.github._1c_syntax.utils.downloader;
 
+import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.DisabledOnOs;
 import org.junit.jupiter.api.condition.OS;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.net.InetSocketAddress;
+import java.net.http.HttpClient;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.Random;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipOutputStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class BslLanguageServerDownloaderTest {
 
@@ -158,9 +168,195 @@ class BslLanguageServerDownloaderTest {
     assertThat(totals).isNotEmpty().allMatch(total -> total == -1);
   }
 
+  @Test
+  void downloadIfNeededDownloadsExtractsAndRecordsVersion(@TempDir Path installDir) throws IOException {
+    var archive = zipWithLaunchers(300 * 1024);
+    var server = startServer(archive);
+    try {
+      var catalog = new FakeCatalog(
+        new ReleaseCatalog.ReleaseInfo("v1.2.3", allOsAssets(assetUrl(server))));
+      var downloader = new BslLanguageServerDownloader(
+        installDir, Duration.ZERO, catalog, testHttpClient());
+
+      var binary = downloader.downloadIfNeeded(BslLanguageServerReleaseChannel.STABLE);
+
+      assertThat(binary).exists();
+      assertThat(binary).startsWith(installDir.resolve("1.2.3"));
+      assertThat(downloader.installedVersion()).contains("1.2.3");
+    } finally {
+      server.stop(0);
+    }
+  }
+
+  @Test
+  void downloadIfNeededReportsProgressForTheAsset(@TempDir Path installDir) throws IOException {
+    var archive = zipWithLaunchers(300 * 1024);
+    var server = startServer(archive);
+    try {
+      var catalog = new FakeCatalog(
+        new ReleaseCatalog.ReleaseInfo("1.0.0", allOsAssets(assetUrl(server))));
+      var downloader = new BslLanguageServerDownloader(
+        installDir, Duration.ZERO, catalog, testHttpClient());
+      var progress = new ArrayList<long[]>();
+
+      downloader.downloadIfNeeded(BslLanguageServerReleaseChannel.STABLE,
+        (bytesRead, totalBytes) -> progress.add(new long[]{bytesRead, totalBytes}));
+
+      assertThat(progress).isNotEmpty();
+      var last = progress.get(progress.size() - 1);
+      assertThat(last[0]).isEqualTo(archive.length);
+      assertThat(last[1]).isEqualTo(archive.length);
+    } finally {
+      server.stop(0);
+    }
+  }
+
+  @Test
+  void downloadIfNeededSkipsCatalogWhenIntervalNotElapsed(@TempDir Path installDir) throws IOException {
+    writeServerInfoAt(installDir, "1.0.0", System.currentTimeMillis());
+    var catalog = new ThrowingCatalog();
+    var downloader = new BslLanguageServerDownloader(
+      installDir, Duration.ofMinutes(8), catalog, testHttpClient());
+
+    var binary = downloader.downloadIfNeeded(BslLanguageServerReleaseChannel.STABLE);
+
+    assertThat(binary.toString()).contains("1.0.0");
+    assertThat(catalog.called).isFalse();
+  }
+
+  @Test
+  void downloadIfNeededFallsBackToInstalledWhenCatalogFails(@TempDir Path installDir) throws IOException {
+    writeServerInfo(installDir, "1.0.0");
+    var catalog = new ThrowingCatalog();
+    var downloader = new BslLanguageServerDownloader(
+      installDir, Duration.ZERO, catalog, testHttpClient());
+
+    var binary = downloader.downloadIfNeeded(BslLanguageServerReleaseChannel.STABLE);
+
+    assertThat(binary.toString()).contains("1.0.0");
+    assertThat(catalog.called).isTrue();
+  }
+
+  @Test
+  void downloadIfNeededThrowsWhenNothingInstalledAndCatalogFails(@TempDir Path installDir) {
+    var catalog = new ThrowingCatalog();
+    var downloader = new BslLanguageServerDownloader(
+      installDir, Duration.ZERO, catalog, testHttpClient());
+
+    assertThatThrownBy(() -> downloader.downloadIfNeeded(BslLanguageServerReleaseChannel.STABLE))
+      .isInstanceOf(IOException.class);
+  }
+
+  @Test
+  void downloadIfNeededPassesRequestedChannelToCatalog(@TempDir Path installDir) throws IOException {
+    writeServerInfo(installDir, "1.0.0");
+    var catalog = new RecordingCatalog(new ReleaseCatalog.ReleaseInfo("1.0.0", Map.of()));
+    var downloader = new BslLanguageServerDownloader(
+      installDir, Duration.ZERO, catalog, testHttpClient());
+
+    downloader.downloadIfNeeded(BslLanguageServerReleaseChannel.PRERELEASE);
+
+    assertThat(catalog.requestedChannel).isEqualTo(BslLanguageServerReleaseChannel.PRERELEASE);
+  }
+
+  private static HttpClient testHttpClient() {
+    // newBuilder() без .proxy() ходит напрямую — то, что нужно для локального сервера.
+    return HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(30)).build();
+  }
+
+  private static HttpServer startServer(byte[] body) throws IOException {
+    var server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+    server.createContext("/asset.zip", exchange -> {
+      exchange.sendResponseHeaders(200, body.length);
+      try (var output = exchange.getResponseBody()) {
+        output.write(body);
+      }
+    });
+    server.start();
+    return server;
+  }
+
+  private static String assetUrl(HttpServer server) {
+    return "http://127.0.0.1:" + server.getAddress().getPort() + "/asset.zip";
+  }
+
+  private static Map<String, String> allOsAssets(String url) {
+    return Map.of(
+      "bsl-language-server_win.zip", url,
+      "bsl-language-server_mac.zip", url,
+      "bsl-language-server_nix.zip", url);
+  }
+
+  /**
+   * Zip с раскладкой лаунчеров для всех трёх ОС (тест OS-агностичен) плюс крупный «полезный»
+   * файл, чтобы скачивание шло несколькими блоками.
+   */
+  private static byte[] zipWithLaunchers(int payloadSize) throws IOException {
+    var payload = new byte[payloadSize];
+    new Random(1).nextBytes(payload);
+    var bytes = new ByteArrayOutputStream();
+    try (var zip = new ZipOutputStream(bytes)) {
+      putEntry(zip, "bsl-language-server/bsl-language-server.exe", new byte[]{1});
+      putEntry(zip, "bsl-language-server/bin/bsl-language-server", new byte[]{1});
+      putEntry(zip, "bsl-language-server.app/Contents/MacOS/bsl-language-server", new byte[]{1});
+      putEntry(zip, "payload.bin", payload);
+    }
+    return bytes.toByteArray();
+  }
+
+  private static void putEntry(ZipOutputStream zip, String name, byte[] data) throws IOException {
+    zip.putNextEntry(new ZipEntry(name));
+    zip.write(data);
+    zip.closeEntry();
+  }
+
+  private static final class FakeCatalog implements ReleaseCatalog {
+    private final ReleaseInfo info;
+
+    FakeCatalog(ReleaseInfo info) {
+      this.info = info;
+    }
+
+    @Override
+    public ReleaseInfo latestRelease(BslLanguageServerReleaseChannel channel) {
+      return info;
+    }
+  }
+
+  private static final class ThrowingCatalog implements ReleaseCatalog {
+    private boolean called;
+
+    @Override
+    public ReleaseInfo latestRelease(BslLanguageServerReleaseChannel channel) throws IOException {
+      called = true;
+      throw new IOException("no network");
+    }
+  }
+
+  private static final class RecordingCatalog implements ReleaseCatalog {
+    private final ReleaseInfo info;
+    private BslLanguageServerReleaseChannel requestedChannel;
+
+    RecordingCatalog(ReleaseInfo info) {
+      this.info = info;
+    }
+
+    @Override
+    public ReleaseInfo latestRelease(BslLanguageServerReleaseChannel channel) {
+      requestedChannel = channel;
+      return info;
+    }
+  }
+
   private static void writeServerInfo(Path installDir, String version) throws IOException {
+    writeServerInfoAt(installDir, version, 0);
+  }
+
+  private static void writeServerInfoAt(Path installDir, String version, long lastUpdate)
+    throws IOException {
     Files.createDirectories(installDir);
     Files.writeString(installDir.resolve("SERVER-INFO"),
-      "version=" + version + System.lineSeparator() + "lastUpdate=0" + System.lineSeparator());
+      "version=" + version + System.lineSeparator()
+        + "lastUpdate=" + lastUpdate + System.lineSeparator());
   }
 }
