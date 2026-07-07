@@ -36,7 +36,6 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -73,7 +72,7 @@ class BslLanguageServerDownloaderTest {
 
   @Test
   void installedVersionIsEmptyWhenNothingInstalled(@TempDir Path installDir) {
-    var downloader = new BslLanguageServerDownloader(installDir, null);
+    var downloader = new BslLanguageServerDownloader(installDir, unusedHttpClient(), null);
     assertThat(downloader.installedVersion()).isEmpty();
     assertThat(downloader.installedBinary()).isEmpty();
   }
@@ -82,7 +81,7 @@ class BslLanguageServerDownloaderTest {
   void installedVersionIsReadFromServerInfo(@TempDir Path installDir) throws IOException {
     writeServerInfo(installDir, "1.0.2");
 
-    var downloader = new BslLanguageServerDownloader(installDir, null);
+    var downloader = new BslLanguageServerDownloader(installDir, unusedHttpClient(), null);
     assertThat(downloader.installedVersion()).contains("1.0.2");
   }
 
@@ -97,7 +96,7 @@ class BslLanguageServerDownloaderTest {
     Files.createDirectories(binary.getParent());
     Files.createFile(binary);
 
-    var downloader = new BslLanguageServerDownloader(installDir, null);
+    var downloader = new BslLanguageServerDownloader(installDir, unusedHttpClient(), null);
     assertThat(downloader.installedBinary()).contains(binary);
   }
 
@@ -176,9 +175,8 @@ class BslLanguageServerDownloaderTest {
   @Test
   void downloadIfNeededDownloadsExtractsAndRecordsVersion(@TempDir Path installDir) throws IOException {
     var archive = zipWithLaunchers(300 * 1024);
-    var catalog = new FakeCatalog(new ReleaseCatalog.ReleaseInfo("v1.2.3", allOsAssets()));
-    var downloader = new BslLanguageServerDownloader(
-      installDir, Duration.ZERO, catalog, httpClientReturning(archive));
+    var downloader = downloaderReturning(installDir, httpClientReturning(archive),
+      new BslLanguageServerDownloader.Release("v1.2.3", allOsAssets()));
 
     var binary = downloader.downloadIfNeeded(BslLanguageServerReleaseChannel.STABLE);
 
@@ -190,9 +188,8 @@ class BslLanguageServerDownloaderTest {
   @Test
   void downloadIfNeededReportsProgressForTheAsset(@TempDir Path installDir) throws IOException {
     var archive = zipWithLaunchers(300 * 1024);
-    var catalog = new FakeCatalog(new ReleaseCatalog.ReleaseInfo("1.0.0", allOsAssets()));
-    var downloader = new BslLanguageServerDownloader(
-      installDir, Duration.ZERO, catalog, httpClientReturning(archive));
+    var downloader = downloaderReturning(installDir, httpClientReturning(archive),
+      new BslLanguageServerDownloader.Release("1.0.0", allOsAssets()));
     var progress = new ArrayList<long[]>();
 
     downloader.downloadIfNeeded(BslLanguageServerReleaseChannel.STABLE,
@@ -205,51 +202,77 @@ class BslLanguageServerDownloaderTest {
   }
 
   @Test
-  void downloadIfNeededSkipsCatalogWhenIntervalNotElapsed(@TempDir Path installDir) throws IOException {
+  void downloadIfNeededSkipsReleaseLookupWhenIntervalNotElapsed(@TempDir Path installDir) throws IOException {
     writeServerInfoAt(installDir, "1.0.0", System.currentTimeMillis());
-    var catalog = new ThrowingCatalog();
-    var downloader = new BslLanguageServerDownloader(
-      installDir, Duration.ofMinutes(8), catalog, unusedHttpClient());
+    var downloader = new BslLanguageServerDownloader(installDir, unusedHttpClient(), null) {
+      @Override
+      Release latestRelease(BslLanguageServerReleaseChannel channel) {
+        throw new AssertionError("release lookup must not run when the interval has not elapsed");
+      }
+    };
 
     var binary = downloader.downloadIfNeeded(BslLanguageServerReleaseChannel.STABLE);
 
     assertThat(binary.toString()).contains("1.0.0");
-    assertThat(catalog.called).isFalse();
   }
 
   @Test
-  void downloadIfNeededFallsBackToInstalledWhenCatalogFails(@TempDir Path installDir) throws IOException {
+  void downloadIfNeededFallsBackToInstalledWhenLookupFails(@TempDir Path installDir) throws IOException {
     writeServerInfo(installDir, "1.0.0");
-    var catalog = new ThrowingCatalog();
-    var downloader = new BslLanguageServerDownloader(
-      installDir, Duration.ZERO, catalog, unusedHttpClient());
+    var downloader = new BslLanguageServerDownloader(installDir, unusedHttpClient(), null) {
+      @Override
+      Release latestRelease(BslLanguageServerReleaseChannel channel) throws IOException {
+        throw new IOException("no network");
+      }
+    };
 
     var binary = downloader.downloadIfNeeded(BslLanguageServerReleaseChannel.STABLE);
 
     assertThat(binary.toString()).contains("1.0.0");
-    assertThat(catalog.called).isTrue();
   }
 
   @Test
-  void downloadIfNeededThrowsWhenNothingInstalledAndCatalogFails(@TempDir Path installDir) {
-    var catalog = new ThrowingCatalog();
-    var downloader = new BslLanguageServerDownloader(
-      installDir, Duration.ZERO, catalog, unusedHttpClient());
+  void downloadIfNeededThrowsWhenNothingInstalledAndLookupFails(@TempDir Path installDir) {
+    var downloader = new BslLanguageServerDownloader(installDir, unusedHttpClient(), null) {
+      @Override
+      Release latestRelease(BslLanguageServerReleaseChannel channel) throws IOException {
+        throw new IOException("no network");
+      }
+    };
 
     assertThatThrownBy(() -> downloader.downloadIfNeeded(BslLanguageServerReleaseChannel.STABLE))
       .isInstanceOf(IOException.class);
   }
 
   @Test
-  void downloadIfNeededPassesRequestedChannelToCatalog(@TempDir Path installDir) throws IOException {
+  void downloadIfNeededPassesRequestedChannelToLookup(@TempDir Path installDir) throws IOException {
     writeServerInfo(installDir, "1.0.0");
-    var catalog = new RecordingCatalog(new ReleaseCatalog.ReleaseInfo("1.0.0", Map.of()));
-    var downloader = new BslLanguageServerDownloader(
-      installDir, Duration.ZERO, catalog, unusedHttpClient());
+    var requested = new BslLanguageServerReleaseChannel[1];
+    var downloader = new BslLanguageServerDownloader(installDir, unusedHttpClient(), null) {
+      @Override
+      Release latestRelease(BslLanguageServerReleaseChannel channel) {
+        requested[0] = channel;
+        return new Release("1.0.0", Map.of()); // та же версия — скачивания не будет
+      }
+    };
 
     downloader.downloadIfNeeded(BslLanguageServerReleaseChannel.PRERELEASE);
 
-    assertThat(catalog.requestedChannel).isEqualTo(BslLanguageServerReleaseChannel.PRERELEASE);
+    assertThat(requested[0]).isEqualTo(BslLanguageServerReleaseChannel.PRERELEASE);
+  }
+
+  /**
+   * Загрузчик, у которого получение релиза подменено на {@code release} (сеть в GitHub не идёт),
+   * а скачивание ассета обслуживает переданный {@code httpClient}.
+   */
+  private static BslLanguageServerDownloader downloaderReturning(
+    Path installDir, HttpClient httpClient, BslLanguageServerDownloader.Release release) {
+    return new BslLanguageServerDownloader(installDir, httpClient, null) {
+      @Override
+      Release latestRelease(BslLanguageServerReleaseChannel channel) {
+        return release;
+      }
+    };
   }
 
   /**
@@ -307,44 +330,6 @@ class BslLanguageServerDownloaderTest {
     zip.putNextEntry(new ZipEntry(name));
     zip.write(data);
     zip.closeEntry();
-  }
-
-  private static final class FakeCatalog implements ReleaseCatalog {
-    private final ReleaseInfo info;
-
-    FakeCatalog(ReleaseInfo info) {
-      this.info = info;
-    }
-
-    @Override
-    public ReleaseInfo latestRelease(BslLanguageServerReleaseChannel channel) {
-      return info;
-    }
-  }
-
-  private static final class ThrowingCatalog implements ReleaseCatalog {
-    private boolean called;
-
-    @Override
-    public ReleaseInfo latestRelease(BslLanguageServerReleaseChannel channel) throws IOException {
-      called = true;
-      throw new IOException("no network");
-    }
-  }
-
-  private static final class RecordingCatalog implements ReleaseCatalog {
-    private final ReleaseInfo info;
-    private BslLanguageServerReleaseChannel requestedChannel;
-
-    RecordingCatalog(ReleaseInfo info) {
-      this.info = info;
-    }
-
-    @Override
-    public ReleaseInfo latestRelease(BslLanguageServerReleaseChannel channel) {
-      requestedChannel = channel;
-      return info;
-    }
   }
 
   private static void writeServerInfo(Path installDir, String version) throws IOException {

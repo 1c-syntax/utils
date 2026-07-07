@@ -25,6 +25,12 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.compress.archivers.zip.ZipArchiveEntry;
 import org.apache.commons.compress.archivers.zip.ZipFile;
 import org.jspecify.annotations.Nullable;
+import org.kohsuke.github.GHAsset;
+import org.kohsuke.github.GHRelease;
+import org.kohsuke.github.GHRepository;
+import org.kohsuke.github.GitHub;
+import org.kohsuke.github.GitHubBuilder;
+import org.kohsuke.github.extras.HttpClientGitHubConnector;
 import org.semver4j.Semver;
 
 import java.io.IOException;
@@ -41,7 +47,9 @@ import java.nio.file.attribute.PosixFilePermission;
 import java.time.Duration;
 import java.util.Comparator;
 import java.util.EnumSet;
+import java.util.HashMap;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Properties;
 import java.util.Set;
@@ -68,11 +76,11 @@ import static java.nio.file.StandardCopyOption.REPLACE_EXISTING;
 @Slf4j
 public class BslLanguageServerDownloader {
 
+  private static final String REPOSITORY = "1c-syntax/bsl-language-server";
   private static final String SERVER_INFO_FILE = "SERVER-INFO";
   private static final String INFO_VERSION = "version";
   private static final String INFO_LAST_UPDATE = "lastUpdate";
   private static final Duration DEFAULT_CHECK_INTERVAL = Duration.ofMinutes(8);
-  private static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(30);
   private static final Duration DOWNLOAD_TIMEOUT = Duration.ofMinutes(10);
   // Крупнее дефолта JDK (16 КБ у InputStream.transferTo): архивы сервера — десятки-сотни МБ,
   // так меньше syscall'ов на чтение/запись и реже дёргается прогресс-колбэк.
@@ -82,49 +90,29 @@ public class BslLanguageServerDownloader {
     FileSystems.getDefault().supportedFileAttributeViews().contains("posix");
 
   private final Path installDir;
-  private final Duration checkInterval;
-  private final ReleaseCatalog releaseCatalog;
   private final HttpClient httpClient;
+  private final @Nullable String token;
 
   /**
-   * Создаёт загрузчик, берущий релизы с GitHub через общий HTTP-клиент.
-   *
    * @param installDir каталог установки сервера; в нём создаются подпапки с версиями
    *                   и файл {@code SERVER-INFO}
+   * @param httpClient клиент для GitHub API и скачивания ассета; должен следовать редиректам —
+   *                   ассеты GitHub отдаются редиректом на CDN
    * @param token      GitHub OAuth-токен для обхода лимитов анонимного API; может быть {@code null}
    */
-  public BslLanguageServerDownloader(Path installDir, @Nullable String token) {
-    this(installDir, DEFAULT_CHECK_INTERVAL, defaultHttpClient(), token);
-  }
-
-  private BslLanguageServerDownloader(Path installDir, Duration checkInterval,
-                                      HttpClient httpClient, @Nullable String token) {
-    this(installDir, checkInterval, new GitHubReleaseCatalog(httpClient, token), httpClient);
+  public BslLanguageServerDownloader(Path installDir, HttpClient httpClient, @Nullable String token) {
+    this.installDir = installDir.toAbsolutePath();
+    this.httpClient = httpClient;
+    this.token = token;
   }
 
   /**
-   * Создаёт загрузчик с явными зависимостями: источником сведений о релизах и HTTP-клиентом
-   * для скачивания ассета. Так их можно подменить (в т.ч. замокать) и прогнать весь поток
-   * скачивания без обращения к сети.
+   * Сведения о релизе, нужные загрузчику.
    *
-   * @param installDir     каталог установки сервера
-   * @param checkInterval  минимальный интервал между обращениями за новой версией
-   * @param releaseCatalog источник сведений о релизах
-   * @param httpClient     HTTP-клиент для скачивания ассета
+   * @param version           тег/версия релиза (может начинаться с {@code v})
+   * @param assetDownloadUrls карта «имя ассета → URL для скачивания»
    */
-  public BslLanguageServerDownloader(Path installDir, Duration checkInterval,
-                                     ReleaseCatalog releaseCatalog, HttpClient httpClient) {
-    this.installDir = installDir.toAbsolutePath();
-    this.checkInterval = checkInterval;
-    this.releaseCatalog = releaseCatalog;
-    this.httpClient = httpClient;
-  }
-
-  private static HttpClient defaultHttpClient() {
-    return HttpClient.newBuilder()
-      .followRedirects(HttpClient.Redirect.NORMAL)
-      .connectTimeout(CONNECT_TIMEOUT)
-      .build();
+  record Release(String version, Map<String, String> assetDownloadUrls) {
   }
 
   /**
@@ -152,7 +140,7 @@ public class BslLanguageServerDownloader {
   /**
    * Скачивает сервер при необходимости и возвращает путь к его исполняемому файлу.
    *
-   * <p>Если с момента прошлой проверки прошло меньше {@link #checkInterval}, GitHub не
+   * <p>Если с момента прошлой проверки прошло меньше {@link #DEFAULT_CHECK_INTERVAL}, GitHub не
    * опрашивается и возвращается уже установленный сервер. Если сеть недоступна, но сервер
    * уже установлен, возвращается установленная версия. Если сервер не установлен и скачать
    * его не удалось — выбрасывается {@link IOException}.
@@ -187,9 +175,9 @@ public class BslLanguageServerDownloader {
       return binaryPath(installed);
     }
 
-    ReleaseCatalog.ReleaseInfo release;
+    Release release;
     try {
-      release = releaseCatalog.latestRelease(channel);
+      release = latestRelease(channel);
     } catch (IOException e) {
       if (installed != null) {
         LOGGER.warn("Failed to fetch BSL Language Server releases, using installed version {}",
@@ -231,13 +219,48 @@ public class BslLanguageServerDownloader {
     }
     try {
       var elapsed = System.currentTimeMillis() - Long.parseLong(lastUpdate);
-      return elapsed >= checkInterval.toMillis();
+      return elapsed >= DEFAULT_CHECK_INTERVAL.toMillis();
     } catch (NumberFormatException e) {
       return true;
     }
   }
 
-  private void downloadAndExtract(ReleaseCatalog.ReleaseInfo release, String version,
+  /**
+   * Возвращает последний релиз выбранного канала с GitHub. Выделен отдельным методом, чтобы в
+   * тестах его можно было переопределить и прогнать поток скачивания без обращения к GitHub API.
+   */
+  Release latestRelease(BslLanguageServerReleaseChannel channel) throws IOException {
+    var builder = new GitHubBuilder().withConnector(new HttpClientGitHubConnector(httpClient));
+    if (token != null && !token.isBlank()) {
+      builder.withOAuthToken(token);
+    }
+    GitHub github = builder.build();
+
+    GHRepository repository = github.getRepository(REPOSITORY);
+
+    GHRelease release;
+    if (channel == BslLanguageServerReleaseChannel.PRERELEASE) {
+      // GitHub отдаёт релизы newest-first — берём первый не-draft.
+      release = repository.listReleases().toList().stream()
+        .filter(it -> !it.isDraft())
+        .findFirst()
+        .orElse(null);
+    } else {
+      release = repository.getLatestRelease();
+    }
+
+    if (release == null) {
+      throw new IOException("Repository " + REPOSITORY + " has no suitable releases for channel " + channel);
+    }
+
+    var assetUrls = new HashMap<String, String>();
+    for (GHAsset asset : release.listAssets().toList()) {
+      assetUrls.putIfAbsent(asset.getName(), asset.getBrowserDownloadUrl());
+    }
+    return new Release(release.getTagName(), Map.copyOf(assetUrls));
+  }
+
+  private void downloadAndExtract(Release release, String version,
                                   DownloadProgressListener progressListener) throws IOException {
     var assetName = assetName();
     var downloadUrl = release.assetDownloadUrls().get(assetName);
