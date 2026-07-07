@@ -107,6 +107,28 @@ class BslLanguageServerDownloaderTest {
   }
 
   @Test
+  void copyToFileReportsProgressAcrossMultipleChunks(@TempDir Path installDir) throws IOException {
+    // Больше буфера copyToFile (16 КБ), чтобы цикл чтения выполнился несколько раз.
+    var payload = new byte[40 * 1024];
+    for (int i = 0; i < payload.length; i++) {
+      payload[i] = (byte) i;
+    }
+    var destination = installDir.resolve("asset.bin");
+    var progress = new ArrayList<long[]>();
+
+    BslLanguageServerDownloader.copyToFile(
+      new ByteArrayInputStream(payload),
+      destination,
+      payload.length,
+      (bytesRead, totalBytes) -> progress.add(new long[]{bytesRead, totalBytes}));
+
+    assertThat(Files.readAllBytes(destination)).isEqualTo(payload);
+    assertThat(progress.size()).isGreaterThan(2);
+    assertThat(progress).map(it -> it[0]).isSorted();
+    assertThat(progress.get(progress.size() - 1)).containsExactly(payload.length, payload.length);
+  }
+
+  @Test
   void copyToFilePropagatesUnknownTotalSize(@TempDir Path installDir) throws IOException {
     var destination = installDir.resolve("asset.bin");
     List<Long> totals = new ArrayList<>();

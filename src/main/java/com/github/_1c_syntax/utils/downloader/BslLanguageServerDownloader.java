@@ -50,6 +50,8 @@ import java.util.Locale;
 import java.util.Optional;
 import java.util.Properties;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Stream;
 
 import static java.nio.file.StandardCopyOption.REPLACE_EXISTING;
@@ -294,10 +296,30 @@ public class BslLanguageServerDownloader {
         }
       }
       var totalBytes = response.headers().firstValueAsLong("Content-Length").orElse(-1L);
-      copyToFile(response.body(), destination, totalBytes, progressListener);
+      copyBodyWithDeadline(response.body(), destination, totalBytes, progressListener);
     } catch (InterruptedException e) {
       Thread.currentThread().interrupt();
       throw new IOException("BSL Language Server download was interrupted", e);
+    }
+  }
+
+  /**
+   * Копирует тело ответа в файл, ограничивая общую длительность загрузки {@link #DOWNLOAD_TIMEOUT}.
+   *
+   * <p>С {@code BodyHandlers.ofInputStream()} таймаут запроса покрывает лишь ожидание заголовков,
+   * а тело читается лениво в {@link #copyToFile}. Чтобы «зависшее» на середине соединение не
+   * блокировало загрузку навсегда, сторож по истечении дедлайна закрывает поток — тогда читающий
+   * {@code read()} прерывается исключением. При успешном завершении сторож отменяется.
+   */
+  private static void copyBodyWithDeadline(InputStream body, Path destination, long totalBytes,
+                                           DownloadProgressListener progressListener) throws IOException {
+    var watchdog = CompletableFuture.runAsync(
+      () -> closeQuietly(body),
+      CompletableFuture.delayedExecutor(DOWNLOAD_TIMEOUT.toMillis(), TimeUnit.MILLISECONDS));
+    try {
+      copyToFile(body, destination, totalBytes, progressListener);
+    } finally {
+      watchdog.cancel(false);
     }
   }
 
@@ -305,14 +327,22 @@ public class BslLanguageServerDownloader {
                          DownloadProgressListener progressListener) throws IOException {
     var buffer = new byte[16 * 1024];
     long readTotal = 0;
-    progressListener.onProgress(0, totalBytes);
     try (var input = source; var output = Files.newOutputStream(destination)) {
+      progressListener.onProgress(0, totalBytes);
       int read;
       while ((read = input.read(buffer)) != -1) {
         output.write(buffer, 0, read);
         readTotal += read;
         progressListener.onProgress(readTotal, totalBytes);
       }
+    }
+  }
+
+  private static void closeQuietly(InputStream stream) {
+    try {
+      stream.close();
+    } catch (IOException e) {
+      LOGGER.debug("Failed to close BSL Language Server download stream", e);
     }
   }
 
