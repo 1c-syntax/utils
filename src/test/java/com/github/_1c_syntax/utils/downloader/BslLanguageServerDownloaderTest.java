@@ -40,6 +40,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
@@ -146,7 +147,7 @@ class BslLanguageServerDownloaderTest {
 
   @Test
   void copyToFileLeavesSourceOpenForCaller(@TempDir Path installDir) throws IOException {
-    var closed = new java.util.concurrent.atomic.AtomicInteger();
+    var closed = new AtomicInteger();
     var source = new ByteArrayInputStream(new byte[]{1, 2, 3}) {
       @Override
       public void close() {
@@ -267,7 +268,9 @@ class BslLanguageServerDownloaderTest {
     when(response.statusCode()).thenReturn(200);
     when(response.headers()).thenReturn(HttpHeaders.of(
       Map.of("Content-Length", List.of(String.valueOf(body.length))), (name, value) -> true));
-    when(response.body()).thenReturn(new ByteArrayInputStream(body));
+    // Свежий поток на каждый send() — чтобы мок оставался корректным, если тело когда-нибудь
+    // прочитают повторно (ретрай/редирект).
+    when(response.body()).thenAnswer(invocation -> new ByteArrayInputStream(body));
 
     var client = mock(HttpClient.class);
     try {
