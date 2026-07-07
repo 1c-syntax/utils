@@ -25,12 +25,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.compress.archivers.zip.ZipArchiveEntry;
 import org.apache.commons.compress.archivers.zip.ZipFile;
 import org.jspecify.annotations.Nullable;
-import org.kohsuke.github.GHAsset;
-import org.kohsuke.github.GHRelease;
-import org.kohsuke.github.GHRepository;
-import org.kohsuke.github.GitHub;
-import org.kohsuke.github.GitHubBuilder;
-import org.kohsuke.github.extras.HttpClientGitHubConnector;
 import org.semver4j.Semver;
 
 import java.io.IOException;
@@ -47,9 +41,7 @@ import java.nio.file.attribute.PosixFilePermission;
 import java.time.Duration;
 import java.util.Comparator;
 import java.util.EnumSet;
-import java.util.HashMap;
 import java.util.Locale;
-import java.util.Map;
 import java.util.Optional;
 import java.util.Properties;
 import java.util.Set;
@@ -76,7 +68,6 @@ import static java.nio.file.StandardCopyOption.REPLACE_EXISTING;
 @Slf4j
 public class BslLanguageServerDownloader {
 
-  private static final String REPOSITORY = "1c-syntax/bsl-language-server";
   private static final String SERVER_INFO_FILE = "SERVER-INFO";
   private static final String INFO_VERSION = "version";
   private static final String INFO_LAST_UPDATE = "lastUpdate";
@@ -90,29 +81,21 @@ public class BslLanguageServerDownloader {
     FileSystems.getDefault().supportedFileAttributeViews().contains("posix");
 
   private final Path installDir;
+  private final GitHubReleaseClient releaseClient;
   private final HttpClient httpClient;
-  private final @Nullable String token;
 
   /**
-   * @param installDir каталог установки сервера; в нём создаются подпапки с версиями
-   *                   и файл {@code SERVER-INFO}
-   * @param httpClient клиент для GitHub API и скачивания ассета; должен следовать редиректам —
-   *                   ассеты GitHub отдаются редиректом на CDN
-   * @param token      GitHub OAuth-токен для обхода лимитов анонимного API; может быть {@code null}
+   * @param installDir    каталог установки сервера; в нём создаются подпапки с версиями
+   *                      и файл {@code SERVER-INFO}
+   * @param releaseClient источник сведений о последнем релизе
+   * @param httpClient    клиент для скачивания ассета; должен следовать редиректам —
+   *                      ассеты GitHub отдаются редиректом на CDN
    */
-  public BslLanguageServerDownloader(Path installDir, HttpClient httpClient, @Nullable String token) {
+  public BslLanguageServerDownloader(Path installDir, GitHubReleaseClient releaseClient,
+                                     HttpClient httpClient) {
     this.installDir = installDir.toAbsolutePath();
+    this.releaseClient = releaseClient;
     this.httpClient = httpClient;
-    this.token = token;
-  }
-
-  /**
-   * Сведения о релизе, нужные загрузчику.
-   *
-   * @param version           тег/версия релиза (может начинаться с {@code v})
-   * @param assetDownloadUrls карта «имя ассета → URL для скачивания»
-   */
-  record Release(String version, Map<String, String> assetDownloadUrls) {
   }
 
   /**
@@ -175,9 +158,9 @@ public class BslLanguageServerDownloader {
       return binaryPath(installed);
     }
 
-    Release release;
+    GitHubReleaseClient.Release release;
     try {
-      release = latestRelease(channel);
+      release = releaseClient.latestRelease(channel);
     } catch (IOException e) {
       if (installed != null) {
         LOGGER.warn("Failed to fetch BSL Language Server releases, using installed version {}",
@@ -225,42 +208,7 @@ public class BslLanguageServerDownloader {
     }
   }
 
-  /**
-   * Возвращает последний релиз выбранного канала с GitHub. Выделен отдельным методом, чтобы в
-   * тестах его можно было переопределить и прогнать поток скачивания без обращения к GitHub API.
-   */
-  Release latestRelease(BslLanguageServerReleaseChannel channel) throws IOException {
-    var builder = new GitHubBuilder().withConnector(new HttpClientGitHubConnector(httpClient));
-    if (token != null && !token.isBlank()) {
-      builder.withOAuthToken(token);
-    }
-    GitHub github = builder.build();
-
-    GHRepository repository = github.getRepository(REPOSITORY);
-
-    GHRelease release;
-    if (channel == BslLanguageServerReleaseChannel.PRERELEASE) {
-      // GitHub отдаёт релизы newest-first — берём первый не-draft.
-      release = repository.listReleases().toList().stream()
-        .filter(it -> !it.isDraft())
-        .findFirst()
-        .orElse(null);
-    } else {
-      release = repository.getLatestRelease();
-    }
-
-    if (release == null) {
-      throw new IOException("Repository " + REPOSITORY + " has no suitable releases for channel " + channel);
-    }
-
-    var assetUrls = new HashMap<String, String>();
-    for (GHAsset asset : release.listAssets().toList()) {
-      assetUrls.putIfAbsent(asset.getName(), asset.getBrowserDownloadUrl());
-    }
-    return new Release(release.getTagName(), Map.copyOf(assetUrls));
-  }
-
-  private void downloadAndExtract(Release release, String version,
+  private void downloadAndExtract(GitHubReleaseClient.Release release, String version,
                                   DownloadProgressListener progressListener) throws IOException {
     var assetName = assetName();
     var downloadUrl = release.assetDownloadUrls().get(assetName);

@@ -48,6 +48,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class BslLanguageServerDownloaderTest {
@@ -72,7 +74,7 @@ class BslLanguageServerDownloaderTest {
 
   @Test
   void installedVersionIsEmptyWhenNothingInstalled(@TempDir Path installDir) {
-    var downloader = new BslLanguageServerDownloader(installDir, unusedHttpClient(), null);
+    var downloader = new BslLanguageServerDownloader(installDir, mock(GitHubReleaseClient.class), unusedHttpClient());
     assertThat(downloader.installedVersion()).isEmpty();
     assertThat(downloader.installedBinary()).isEmpty();
   }
@@ -81,7 +83,7 @@ class BslLanguageServerDownloaderTest {
   void installedVersionIsReadFromServerInfo(@TempDir Path installDir) throws IOException {
     writeServerInfo(installDir, "1.0.2");
 
-    var downloader = new BslLanguageServerDownloader(installDir, unusedHttpClient(), null);
+    var downloader = new BslLanguageServerDownloader(installDir, mock(GitHubReleaseClient.class), unusedHttpClient());
     assertThat(downloader.installedVersion()).contains("1.0.2");
   }
 
@@ -96,7 +98,7 @@ class BslLanguageServerDownloaderTest {
     Files.createDirectories(binary.getParent());
     Files.createFile(binary);
 
-    var downloader = new BslLanguageServerDownloader(installDir, unusedHttpClient(), null);
+    var downloader = new BslLanguageServerDownloader(installDir, mock(GitHubReleaseClient.class), unusedHttpClient());
     assertThat(downloader.installedBinary()).contains(binary);
   }
 
@@ -175,8 +177,10 @@ class BslLanguageServerDownloaderTest {
   @Test
   void downloadIfNeededDownloadsExtractsAndRecordsVersion(@TempDir Path installDir) throws IOException {
     var archive = zipWithLaunchers(300 * 1024);
-    var downloader = downloaderReturning(installDir, httpClientReturning(archive),
-      new BslLanguageServerDownloader.Release("v1.2.3", allOsAssets()));
+    var releaseClient = mock(GitHubReleaseClient.class);
+    when(releaseClient.latestRelease(any()))
+      .thenReturn(new GitHubReleaseClient.Release("v1.2.3", allOsAssets()));
+    var downloader = new BslLanguageServerDownloader(installDir, releaseClient, httpClientReturning(archive));
 
     var binary = downloader.downloadIfNeeded(BslLanguageServerReleaseChannel.STABLE);
 
@@ -188,8 +192,10 @@ class BslLanguageServerDownloaderTest {
   @Test
   void downloadIfNeededReportsProgressForTheAsset(@TempDir Path installDir) throws IOException {
     var archive = zipWithLaunchers(300 * 1024);
-    var downloader = downloaderReturning(installDir, httpClientReturning(archive),
-      new BslLanguageServerDownloader.Release("1.0.0", allOsAssets()));
+    var releaseClient = mock(GitHubReleaseClient.class);
+    when(releaseClient.latestRelease(any()))
+      .thenReturn(new GitHubReleaseClient.Release("1.0.0", allOsAssets()));
+    var downloader = new BslLanguageServerDownloader(installDir, releaseClient, httpClientReturning(archive));
     var progress = new ArrayList<long[]>();
 
     downloader.downloadIfNeeded(BslLanguageServerReleaseChannel.STABLE,
@@ -202,29 +208,24 @@ class BslLanguageServerDownloaderTest {
   }
 
   @Test
-  void downloadIfNeededSkipsReleaseLookupWhenIntervalNotElapsed(@TempDir Path installDir) throws IOException {
+  void downloadIfNeededSkipsReleaseLookupWhenIntervalNotElapsed(@TempDir Path installDir)
+    throws IOException {
     writeServerInfoAt(installDir, "1.0.0", System.currentTimeMillis());
-    var downloader = new BslLanguageServerDownloader(installDir, unusedHttpClient(), null) {
-      @Override
-      Release latestRelease(BslLanguageServerReleaseChannel channel) {
-        throw new AssertionError("release lookup must not run when the interval has not elapsed");
-      }
-    };
+    var releaseClient = mock(GitHubReleaseClient.class);
+    var downloader = new BslLanguageServerDownloader(installDir, releaseClient, unusedHttpClient());
 
     var binary = downloader.downloadIfNeeded(BslLanguageServerReleaseChannel.STABLE);
 
     assertThat(binary.toString()).contains("1.0.0");
+    verify(releaseClient, never()).latestRelease(any());
   }
 
   @Test
   void downloadIfNeededFallsBackToInstalledWhenLookupFails(@TempDir Path installDir) throws IOException {
     writeServerInfo(installDir, "1.0.0");
-    var downloader = new BslLanguageServerDownloader(installDir, unusedHttpClient(), null) {
-      @Override
-      Release latestRelease(BslLanguageServerReleaseChannel channel) throws IOException {
-        throw new IOException("no network");
-      }
-    };
+    var releaseClient = mock(GitHubReleaseClient.class);
+    when(releaseClient.latestRelease(any())).thenThrow(new IOException("no network"));
+    var downloader = new BslLanguageServerDownloader(installDir, releaseClient, unusedHttpClient());
 
     var binary = downloader.downloadIfNeeded(BslLanguageServerReleaseChannel.STABLE);
 
@@ -232,13 +233,11 @@ class BslLanguageServerDownloaderTest {
   }
 
   @Test
-  void downloadIfNeededThrowsWhenNothingInstalledAndLookupFails(@TempDir Path installDir) {
-    var downloader = new BslLanguageServerDownloader(installDir, unusedHttpClient(), null) {
-      @Override
-      Release latestRelease(BslLanguageServerReleaseChannel channel) throws IOException {
-        throw new IOException("no network");
-      }
-    };
+  void downloadIfNeededThrowsWhenNothingInstalledAndLookupFails(@TempDir Path installDir)
+    throws IOException {
+    var releaseClient = mock(GitHubReleaseClient.class);
+    when(releaseClient.latestRelease(any())).thenThrow(new IOException("no network"));
+    var downloader = new BslLanguageServerDownloader(installDir, releaseClient, unusedHttpClient());
 
     assertThatThrownBy(() -> downloader.downloadIfNeeded(BslLanguageServerReleaseChannel.STABLE))
       .isInstanceOf(IOException.class);
@@ -247,32 +246,15 @@ class BslLanguageServerDownloaderTest {
   @Test
   void downloadIfNeededPassesRequestedChannelToLookup(@TempDir Path installDir) throws IOException {
     writeServerInfo(installDir, "1.0.0");
-    var requested = new BslLanguageServerReleaseChannel[1];
-    var downloader = new BslLanguageServerDownloader(installDir, unusedHttpClient(), null) {
-      @Override
-      Release latestRelease(BslLanguageServerReleaseChannel channel) {
-        requested[0] = channel;
-        return new Release("1.0.0", Map.of()); // та же версия — скачивания не будет
-      }
-    };
+    var releaseClient = mock(GitHubReleaseClient.class);
+    // та же версия — скачивания не будет, проверяем только проброс канала
+    when(releaseClient.latestRelease(any()))
+      .thenReturn(new GitHubReleaseClient.Release("1.0.0", Map.of()));
+    var downloader = new BslLanguageServerDownloader(installDir, releaseClient, unusedHttpClient());
 
     downloader.downloadIfNeeded(BslLanguageServerReleaseChannel.PRERELEASE);
 
-    assertThat(requested[0]).isEqualTo(BslLanguageServerReleaseChannel.PRERELEASE);
-  }
-
-  /**
-   * Загрузчик, у которого получение релиза подменено на {@code release} (сеть в GitHub не идёт),
-   * а скачивание ассета обслуживает переданный {@code httpClient}.
-   */
-  private static BslLanguageServerDownloader downloaderReturning(
-    Path installDir, HttpClient httpClient, BslLanguageServerDownloader.Release release) {
-    return new BslLanguageServerDownloader(installDir, httpClient, null) {
-      @Override
-      Release latestRelease(BslLanguageServerReleaseChannel channel) {
-        return release;
-      }
-    };
+    verify(releaseClient).latestRelease(BslLanguageServerReleaseChannel.PRERELEASE);
   }
 
   /**
