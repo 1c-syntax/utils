@@ -51,7 +51,7 @@ dependencies {
     implementation("org.slf4j:slf4j-api:2.0.17")
     implementation("org.kohsuke:github-api:1.330")
     implementation("org.apache.commons:commons-compress:1.28.0")
-    implementation("org.semver4j:semver4j:5.8.0")
+    implementation("org.semver4j:semver4j:6.0.0")
 
     testImplementation("org.assertj:assertj-core:3.27.7")
 
