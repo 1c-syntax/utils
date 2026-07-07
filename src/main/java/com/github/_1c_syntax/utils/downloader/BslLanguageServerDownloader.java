@@ -148,6 +148,24 @@ public class BslLanguageServerDownloader {
    * @throws IOException если сервер не установлен и его не удалось скачать
    */
   public Path downloadIfNeeded(BslLanguageServerReleaseChannel channel) throws IOException {
+    return downloadIfNeeded(channel, DownloadProgressListener.NONE);
+  }
+
+  /**
+   * Скачивает сервер при необходимости и возвращает путь к его исполняемому файлу, сообщая о
+   * прогрессе скачивания ассета.
+   *
+   * <p>Поведение совпадает с {@link #downloadIfNeeded(BslLanguageServerReleaseChannel)}; отличие —
+   * в передаче {@code progressListener}, который вызывается по мере вычитывания тела ответа
+   * (только когда действительно происходит скачивание новой версии).
+   *
+   * @param channel          канал релизов (стабильный / pre-release)
+   * @param progressListener слушатель прогресса скачивания ассета
+   * @return путь к исполняемому файлу сервера
+   * @throws IOException если сервер не установлен и его не удалось скачать
+   */
+  public Path downloadIfNeeded(BslLanguageServerReleaseChannel channel,
+                               DownloadProgressListener progressListener) throws IOException {
     var installed = installedVersion().orElse(null);
 
     if (installed != null && !checkIntervalElapsed()) {
@@ -173,7 +191,7 @@ public class BslLanguageServerDownloader {
     if (installed == null || compareVersions(latestVersion, installed) > 0) {
       LOGGER.info("Downloading BSL Language Server {}", latestVersion);
       try {
-        downloadAndExtract(release, latestVersion);
+        downloadAndExtract(release, latestVersion, progressListener);
         cleanupOtherVersions(latestVersion);
         installed = latestVersion;
       } catch (IOException e) {
@@ -234,7 +252,8 @@ public class BslLanguageServerDownloader {
     return release;
   }
 
-  private void downloadAndExtract(GHRelease release, String version) throws IOException {
+  private void downloadAndExtract(GHRelease release, String version,
+                                  DownloadProgressListener progressListener) throws IOException {
     var assetName = assetName();
     var downloadUrl = release.listAssets().toList().stream()
       .filter(asset -> asset.getName().equals(assetName))
@@ -248,7 +267,7 @@ public class BslLanguageServerDownloader {
     var versionDir = installDir.resolve(version);
 
     try {
-      download(downloadUrl, archive);
+      download(downloadUrl, archive, progressListener);
       deleteRecursively(versionDir);
       extract(archive, versionDir);
     } finally {
@@ -256,7 +275,8 @@ public class BslLanguageServerDownloader {
     }
   }
 
-  private void download(String url, Path destination) throws IOException {
+  private void download(String url, Path destination, DownloadProgressListener progressListener)
+    throws IOException {
     var client = HttpClient.newBuilder()
       .followRedirects(HttpClient.Redirect.NORMAL)
       .connectTimeout(CONNECT_TIMEOUT)
@@ -267,13 +287,32 @@ public class BslLanguageServerDownloader {
       .GET()
       .build();
     try {
-      var response = client.send(request, HttpResponse.BodyHandlers.ofFile(destination));
+      var response = client.send(request, HttpResponse.BodyHandlers.ofInputStream());
       if (response.statusCode() != 200) {
-        throw new IOException("Failed to download " + url + ": HTTP " + response.statusCode());
+        try (var ignored = response.body()) {
+          throw new IOException("Failed to download " + url + ": HTTP " + response.statusCode());
+        }
       }
+      var totalBytes = response.headers().firstValueAsLong("Content-Length").orElse(-1L);
+      copyToFile(response.body(), destination, totalBytes, progressListener);
     } catch (InterruptedException e) {
       Thread.currentThread().interrupt();
       throw new IOException("BSL Language Server download was interrupted", e);
+    }
+  }
+
+  static void copyToFile(InputStream source, Path destination, long totalBytes,
+                         DownloadProgressListener progressListener) throws IOException {
+    var buffer = new byte[16 * 1024];
+    long readTotal = 0;
+    progressListener.onProgress(0, totalBytes);
+    try (var input = source; var output = Files.newOutputStream(destination)) {
+      int read;
+      while ((read = input.read(buffer)) != -1) {
+        output.write(buffer, 0, read);
+        readTotal += read;
+        progressListener.onProgress(readTotal, totalBytes);
+      }
     }
   }
 

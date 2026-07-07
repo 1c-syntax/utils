@@ -26,9 +26,13 @@ import org.junit.jupiter.api.condition.DisabledOnOs;
 import org.junit.jupiter.api.condition.OS;
 import org.junit.jupiter.api.io.TempDir;
 
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -80,6 +84,40 @@ class BslLanguageServerDownloaderTest {
 
     var downloader = new BslLanguageServerDownloader(installDir);
     assertThat(downloader.installedBinary()).contains(binary);
+  }
+
+  @Test
+  void copyToFileWritesContentAndReportsProgress(@TempDir Path installDir) throws IOException {
+    var payload = "bsl-language-server".getBytes(StandardCharsets.UTF_8);
+    var destination = installDir.resolve("asset.bin");
+    var progress = new ArrayList<long[]>();
+
+    BslLanguageServerDownloader.copyToFile(
+      new ByteArrayInputStream(payload),
+      destination,
+      payload.length,
+      (bytesRead, totalBytes) -> progress.add(new long[]{bytesRead, totalBytes}));
+
+    assertThat(Files.readAllBytes(destination)).isEqualTo(payload);
+    assertThat(progress).isNotEmpty();
+    assertThat(progress.get(0)).containsExactly(0, payload.length);
+    var last = progress.get(progress.size() - 1);
+    assertThat(last).containsExactly(payload.length, payload.length);
+    assertThat(last[0]).isLessThanOrEqualTo(last[1]);
+  }
+
+  @Test
+  void copyToFilePropagatesUnknownTotalSize(@TempDir Path installDir) throws IOException {
+    var destination = installDir.resolve("asset.bin");
+    List<Long> totals = new ArrayList<>();
+
+    BslLanguageServerDownloader.copyToFile(
+      new ByteArrayInputStream(new byte[]{1, 2, 3}),
+      destination,
+      -1,
+      (bytesRead, totalBytes) -> totals.add(totalBytes));
+
+    assertThat(totals).isNotEmpty().allMatch(total -> total == -1);
   }
 
   private static void writeServerInfo(Path installDir, String version) throws IOException {
