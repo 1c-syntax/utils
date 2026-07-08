@@ -72,11 +72,14 @@ public class GitHubReleaseClient {
 
     GHRelease release;
     if (channel == BslLanguageServerReleaseChannel.PRERELEASE) {
-      // GitHub отдаёт релизы newest-first — берём первый не-draft.
-      release = repository.listReleases().toList().stream()
-        .filter(it -> !it.isDraft())
-        .findFirst()
-        .orElse(null);
+      // GitHub отдаёт релизы newest-first — берём первый не-draft, не подгружая все страницы.
+      release = null;
+      for (GHRelease candidate : repository.listReleases()) {
+        if (!candidate.isDraft()) {
+          release = candidate;
+          break;
+        }
+      }
     } else {
       release = repository.getLatestRelease();
     }
