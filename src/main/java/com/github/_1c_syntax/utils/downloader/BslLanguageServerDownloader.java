@@ -25,11 +25,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.compress.archivers.zip.ZipArchiveEntry;
 import org.apache.commons.compress.archivers.zip.ZipFile;
 import org.jspecify.annotations.Nullable;
-import org.kohsuke.github.GHRelease;
-import org.kohsuke.github.GHRepository;
-import org.kohsuke.github.GitHub;
-import org.kohsuke.github.GitHubBuilder;
-import org.kohsuke.github.extras.HttpClientGitHubConnector;
 import org.semver4j.Semver;
 
 import java.io.IOException;
@@ -50,6 +45,8 @@ import java.util.Locale;
 import java.util.Optional;
 import java.util.Properties;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Stream;
 
 import static java.nio.file.StandardCopyOption.REPLACE_EXISTING;
@@ -71,46 +68,34 @@ import static java.nio.file.StandardCopyOption.REPLACE_EXISTING;
 @Slf4j
 public class BslLanguageServerDownloader {
 
-  private static final String REPOSITORY = "1c-syntax/bsl-language-server";
   private static final String SERVER_INFO_FILE = "SERVER-INFO";
   private static final String INFO_VERSION = "version";
   private static final String INFO_LAST_UPDATE = "lastUpdate";
   private static final Duration DEFAULT_CHECK_INTERVAL = Duration.ofMinutes(8);
-  private static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(30);
   private static final Duration DOWNLOAD_TIMEOUT = Duration.ofMinutes(10);
+  // Крупнее дефолта JDK (16 КБ у InputStream.transferTo): архивы сервера — десятки-сотни МБ,
+  // так меньше syscall'ов на чтение/запись и реже дёргается прогресс-колбэк.
+  private static final int DOWNLOAD_BUFFER_SIZE = 256 * 1024;
 
   private static final boolean POSIX =
     FileSystems.getDefault().supportedFileAttributeViews().contains("posix");
 
   private final Path installDir;
-  private final @Nullable String token;
-  private final Duration checkInterval;
+  private final GitHubReleaseClient releaseClient;
+  private final HttpClient httpClient;
 
   /**
-   * @param installDir каталог установки сервера; в нём создаются подпапки с версиями
-   *                   и файл {@code SERVER-INFO}
+   * @param installDir    каталог установки сервера; в нём создаются подпапки с версиями
+   *                      и файл {@code SERVER-INFO}
+   * @param releaseClient источник сведений о последнем релизе
+   * @param httpClient    клиент только для скачивания ассета (github-api эту загрузку не умеет);
+   *                      должен следовать редиректам — ассеты GitHub отдаются редиректом на CDN
    */
-  public BslLanguageServerDownloader(Path installDir) {
-    this(installDir, null);
-  }
-
-  /**
-   * @param installDir каталог установки сервера
-   * @param token      GitHub OAuth-токен для обхода лимитов анонимного API; может быть {@code null}
-   */
-  public BslLanguageServerDownloader(Path installDir, @Nullable String token) {
-    this(installDir, token, DEFAULT_CHECK_INTERVAL);
-  }
-
-  /**
-   * @param installDir    каталог установки сервера
-   * @param token         GitHub OAuth-токен; может быть {@code null}
-   * @param checkInterval минимальный интервал между обращениями к GitHub API за новой версией
-   */
-  public BslLanguageServerDownloader(Path installDir, @Nullable String token, Duration checkInterval) {
+  public BslLanguageServerDownloader(Path installDir, GitHubReleaseClient releaseClient,
+                                     HttpClient httpClient) {
     this.installDir = installDir.toAbsolutePath();
-    this.token = token;
-    this.checkInterval = checkInterval;
+    this.releaseClient = releaseClient;
+    this.httpClient = httpClient;
   }
 
   /**
@@ -138,7 +123,7 @@ public class BslLanguageServerDownloader {
   /**
    * Скачивает сервер при необходимости и возвращает путь к его исполняемому файлу.
    *
-   * <p>Если с момента прошлой проверки прошло меньше {@link #checkInterval}, GitHub не
+   * <p>Если с момента прошлой проверки прошло меньше {@link #DEFAULT_CHECK_INTERVAL}, GitHub не
    * опрашивается и возвращается уже установленный сервер. Если сеть недоступна, но сервер
    * уже установлен, возвращается установленная версия. Если сервер не установлен и скачать
    * его не удалось — выбрасывается {@link IOException}.
@@ -148,6 +133,24 @@ public class BslLanguageServerDownloader {
    * @throws IOException если сервер не установлен и его не удалось скачать
    */
   public Path downloadIfNeeded(BslLanguageServerReleaseChannel channel) throws IOException {
+    return downloadIfNeeded(channel, DownloadProgressListener.NONE);
+  }
+
+  /**
+   * Скачивает сервер при необходимости и возвращает путь к его исполняемому файлу, сообщая о
+   * прогрессе скачивания ассета.
+   *
+   * <p>Поведение совпадает с {@link #downloadIfNeeded(BslLanguageServerReleaseChannel)}; отличие —
+   * в передаче {@code progressListener}, который вызывается по мере вычитывания тела ответа
+   * (только когда действительно происходит скачивание новой версии).
+   *
+   * @param channel          канал релизов (стабильный / pre-release)
+   * @param progressListener слушатель прогресса скачивания ассета
+   * @return путь к исполняемому файлу сервера
+   * @throws IOException если сервер не установлен и его не удалось скачать
+   */
+  public Path downloadIfNeeded(BslLanguageServerReleaseChannel channel,
+                               DownloadProgressListener progressListener) throws IOException {
     var installed = installedVersion().orElse(null);
 
     if (installed != null && !checkIntervalElapsed()) {
@@ -155,9 +158,9 @@ public class BslLanguageServerDownloader {
       return binaryPath(installed);
     }
 
-    GHRelease release;
+    GitHubReleaseClient.Release release;
     try {
-      release = latestRelease(channel);
+      release = releaseClient.latestRelease(channel);
     } catch (IOException e) {
       if (installed != null) {
         LOGGER.warn("Failed to fetch BSL Language Server releases, using installed version {}",
@@ -168,12 +171,12 @@ public class BslLanguageServerDownloader {
       throw new IOException("Failed to fetch BSL Language Server releases", e);
     }
 
-    var latestVersion = normalizeVersion(release.getTagName());
+    var latestVersion = normalizeVersion(release.version());
 
     if (installed == null || compareVersions(latestVersion, installed) > 0) {
       LOGGER.info("Downloading BSL Language Server {}", latestVersion);
       try {
-        downloadAndExtract(release, latestVersion);
+        downloadAndExtract(release, latestVersion, progressListener);
         cleanupOtherVersions(latestVersion);
         installed = latestVersion;
       } catch (IOException e) {
@@ -199,56 +202,26 @@ public class BslLanguageServerDownloader {
     }
     try {
       var elapsed = System.currentTimeMillis() - Long.parseLong(lastUpdate);
-      return elapsed >= checkInterval.toMillis();
+      return elapsed >= DEFAULT_CHECK_INTERVAL.toMillis();
     } catch (NumberFormatException e) {
       return true;
     }
   }
 
-  private GHRelease latestRelease(BslLanguageServerReleaseChannel channel) throws IOException {
-    var httpClient = HttpClient.newBuilder()
-      .connectTimeout(CONNECT_TIMEOUT)
-      .build();
-    var builder = new GitHubBuilder().withConnector(new HttpClientGitHubConnector(httpClient));
-    if (token != null && !token.isBlank()) {
-      builder.withOAuthToken(token);
-    }
-    GitHub github = builder.build();
-
-    GHRepository repository = github.getRepository(REPOSITORY);
-
-    GHRelease release;
-    if (channel == BslLanguageServerReleaseChannel.PRERELEASE) {
-      // GitHub отдаёт релизы newest-first — берём первый не-draft.
-      release = repository.listReleases().toList().stream()
-        .filter(it -> !it.isDraft())
-        .findFirst()
-        .orElse(null);
-    } else {
-      release = repository.getLatestRelease();
-    }
-
-    if (release == null) {
-      throw new IOException("Repository " + REPOSITORY + " has no suitable releases for channel " + channel);
-    }
-    return release;
-  }
-
-  private void downloadAndExtract(GHRelease release, String version) throws IOException {
+  private void downloadAndExtract(GitHubReleaseClient.Release release, String version,
+                                  DownloadProgressListener progressListener) throws IOException {
     var assetName = assetName();
-    var downloadUrl = release.listAssets().toList().stream()
-      .filter(asset -> asset.getName().equals(assetName))
-      .map(asset -> asset.getBrowserDownloadUrl())
-      .findFirst()
-      .orElseThrow(() -> new IOException(
-        "BSL Language Server release " + version + " has no asset " + assetName));
+    var downloadUrl = release.assetDownloadUrls().get(assetName);
+    if (downloadUrl == null) {
+      throw new IOException("BSL Language Server release " + version + " has no asset " + assetName);
+    }
 
     Files.createDirectories(installDir);
     var archive = installDir.resolve(version + "-download-" + assetName);
     var versionDir = installDir.resolve(version);
 
     try {
-      download(downloadUrl, archive);
+      download(downloadUrl, archive, progressListener);
       deleteRecursively(versionDir);
       extract(archive, versionDir);
     } finally {
@@ -256,24 +229,65 @@ public class BslLanguageServerDownloader {
     }
   }
 
-  private void download(String url, Path destination) throws IOException {
-    var client = HttpClient.newBuilder()
-      .followRedirects(HttpClient.Redirect.NORMAL)
-      .connectTimeout(CONNECT_TIMEOUT)
-      .build();
+  private void download(String url, Path destination, DownloadProgressListener progressListener)
+    throws IOException {
     var request = HttpRequest.newBuilder(URI.create(url))
       .header("User-Agent", "1c-syntax-utils")
       .timeout(DOWNLOAD_TIMEOUT)
       .GET()
       .build();
     try {
-      var response = client.send(request, HttpResponse.BodyHandlers.ofFile(destination));
+      var response = httpClient.send(request, HttpResponse.BodyHandlers.ofInputStream());
       if (response.statusCode() != 200) {
-        throw new IOException("Failed to download " + url + ": HTTP " + response.statusCode());
+        try (var ignored = response.body()) {
+          throw new IOException("Failed to download " + url + ": HTTP " + response.statusCode());
+        }
+      }
+      var totalBytes = response.headers().firstValueAsLong("Content-Length").orElse(-1L);
+      // Владелец потока — этот блок (здесь взят response.body()), он же его и закрывает.
+      // Тело читается лениво, поэтому request.timeout его не покрывает: по дедлайну сторож
+      // закрывает поток — единственный способ разбудить заблокированный read(). При штатном
+      // завершении сторож отменяется. copyToFile поток не закрывает.
+      try (var body = response.body()) {
+        var watchdog = CompletableFuture.runAsync(
+          () -> closeQuietly(body),
+          CompletableFuture.delayedExecutor(DOWNLOAD_TIMEOUT.toMillis(), TimeUnit.MILLISECONDS));
+        try {
+          copyToFile(body, destination, totalBytes, progressListener);
+        } finally {
+          watchdog.cancel(false);
+        }
       }
     } catch (InterruptedException e) {
       Thread.currentThread().interrupt();
       throw new IOException("BSL Language Server download was interrupted", e);
+    }
+  }
+
+  /**
+   * Копирует {@code source} в файл, сообщая о прогрессе. Поток {@code source} не закрывает —
+   * этим владеет вызывающий код.
+   */
+  static void copyToFile(InputStream source, Path destination, long totalBytes,
+                         DownloadProgressListener progressListener) throws IOException {
+    var buffer = new byte[DOWNLOAD_BUFFER_SIZE];
+    long readTotal = 0;
+    try (var output = Files.newOutputStream(destination)) {
+      progressListener.onProgress(0, totalBytes);
+      int read;
+      while ((read = source.read(buffer)) != -1) {
+        output.write(buffer, 0, read);
+        readTotal += read;
+        progressListener.onProgress(readTotal, totalBytes);
+      }
+    }
+  }
+
+  private static void closeQuietly(InputStream stream) {
+    try {
+      stream.close();
+    } catch (IOException e) {
+      LOGGER.debug("Failed to close BSL Language Server download stream", e);
     }
   }
 

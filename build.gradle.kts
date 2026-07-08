@@ -54,6 +54,7 @@ dependencies {
     implementation("org.semver4j:semver4j:6.0.0")
 
     testImplementation("org.assertj:assertj-core:3.27.7")
+    testImplementation("org.mockito:mockito-core:5.14.2")
 
     testImplementation(platform("org.junit:junit-bom:6.1.1"))
     testImplementation("org.junit.jupiter:junit-jupiter-api")
