@@ -30,13 +30,13 @@ import org.kohsuke.github.GitHubBuilder;
 import org.kohsuke.github.extras.HttpClientGitHubConnector;
 
 import java.io.IOException;
-import java.net.http.HttpClient;
 import java.util.HashMap;
 import java.util.Map;
 
 /**
  * Клиент GitHub-релизов BSL Language Server: находит последний релиз канала в репозитории
- * {@value #REPOSITORY} через переданный {@link HttpClient}.
+ * {@value #REPOSITORY}. HTTP-доступ обеспечивает сама github-api (свой {@link HttpClientGitHubConnector}
+ * со встроенным клиентом) — отдельный HTTP-клиент здесь не нужен.
  *
  * <p>Отдельная зависимость загрузчика — чтобы в тестах его можно было замокать и прогнать поток
  * скачивания без обращения к GitHub. Класс не {@code final} специально: так его мокает Mockito.
@@ -45,15 +45,12 @@ public class GitHubReleaseClient {
 
   private static final String REPOSITORY = "1c-syntax/bsl-language-server";
 
-  private final HttpClient httpClient;
   private final @Nullable String token;
 
   /**
-   * @param httpClient HTTP-клиент, через который github-api обращается к GitHub
-   * @param token      GitHub OAuth-токен для обхода лимитов анонимного API; может быть {@code null}
+   * @param token GitHub OAuth-токен для обхода лимитов анонимного API; может быть {@code null}
    */
-  public GitHubReleaseClient(HttpClient httpClient, @Nullable String token) {
-    this.httpClient = httpClient;
+  public GitHubReleaseClient(@Nullable String token) {
     this.token = token;
   }
 
@@ -65,7 +62,7 @@ public class GitHubReleaseClient {
    * @throws IOException если релизы недоступны или подходящего релиза нет
    */
   public Release latestRelease(BslLanguageServerReleaseChannel channel) throws IOException {
-    var builder = new GitHubBuilder().withConnector(new HttpClientGitHubConnector(httpClient));
+    var builder = new GitHubBuilder().withConnector(new HttpClientGitHubConnector());
     if (token != null && !token.isBlank()) {
       builder.withOAuthToken(token);
     }

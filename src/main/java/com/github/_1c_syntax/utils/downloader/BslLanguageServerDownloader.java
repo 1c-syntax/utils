@@ -88,8 +88,8 @@ public class BslLanguageServerDownloader {
    * @param installDir    каталог установки сервера; в нём создаются подпапки с версиями
    *                      и файл {@code SERVER-INFO}
    * @param releaseClient источник сведений о последнем релизе
-   * @param httpClient    клиент для скачивания ассета; должен следовать редиректам —
-   *                      ассеты GitHub отдаются редиректом на CDN
+   * @param httpClient    клиент только для скачивания ассета (github-api эту загрузку не умеет);
+   *                      должен следовать редиректам — ассеты GitHub отдаются редиректом на CDN
    */
   public BslLanguageServerDownloader(Path installDir, GitHubReleaseClient releaseClient,
                                      HttpClient httpClient) {
