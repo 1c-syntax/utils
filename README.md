@@ -4,7 +4,7 @@
 [![Maven Central](https://img.shields.io/maven-central/v/io.github.1c-syntax/utils.svg?label=Maven%20Central)](https://central.sonatype.com/artifact/io.github.1c-syntax/utils)
 [![GitHub release](https://img.shields.io/github/v/release/1c-syntax/utils?include_prereleases&sort=semver)](https://github.com/1c-syntax/utils/releases)
 [![Java](https://img.shields.io/badge/Java-21%2B-orange.svg)](https://adoptium.net/)
-[![License: LGPL-3.0-or-later](https://img.shields.io/badge/license-LGPL--3.0--or--later-blue.svg)](COPYING.LESSER.md)
+[![License: LGPL-3.0-or-later](https://img.shields.io/badge/license-LGPL--3.0--or--later-blue.svg)](LICENSE.md)
 
 Общие утилиты для java-проектов команды [1c-syntax](https://github.com/1c-syntax) —
 небольшие независимые помощники, переиспользуемые в
@@ -121,4 +121,4 @@ Path binary = downloader.downloadIfNeeded(BslLanguageServerReleaseChannel.STABLE
 
 ## Лицензия
 
-[GNU LGPL 3.0 или новее](COPYING.LESSER.md) (`SPDX-License-Identifier: LGPL-3.0-or-later`).
+[GNU LGPL 3.0 или новее](LICENSE.md) (`SPDX-License-Identifier: LGPL-3.0-or-later`).
