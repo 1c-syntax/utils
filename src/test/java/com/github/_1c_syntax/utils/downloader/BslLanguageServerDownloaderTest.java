@@ -191,8 +191,7 @@ class BslLanguageServerDownloaderTest {
   }
 
   @Test
-  @DisabledOnOs(OS.WINDOWS)
-  void downloadIfNeededMarksLauncherExecutable(@TempDir Path installDir) throws IOException {
+  void downloadIfNeededReturnsExecutableLauncher(@TempDir Path installDir) throws IOException {
     var archive = zipWithLaunchers(300 * 1024);
     var releaseClient = mock(GitHubReleaseClient.class);
     when(releaseClient.latestRelease(any()))
