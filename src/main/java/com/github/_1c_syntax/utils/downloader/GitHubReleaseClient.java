@@ -63,12 +63,14 @@ public class GitHubReleaseClient {
   // в поле message; токен в теле не возвращается, так что утечки секрета нет).
   private static final int ERROR_BODY_LIMIT = 500;
 
-  // Ссылка на ассет релиза: https://github.com/<repo>/releases/download/<tag>/<file>.
-  // Группа 1 — тег (версия), группа 2 — имя ассета, всё совпадение — URL для скачивания. Только
-  // browser_download_url имеет такой путь (у html_url — /releases/tag/, у API-ссылок другой хост),
-  // поэтому лишнего не захватываем.
+  // Ассет релиза: значение поля browser_download_url вида
+  // https://github.com/<repo>/releases/download/<tag>/<file>. Группа 1 — сам URL, группа 2 — тег
+  // (версия), группа 3 — имя ассета. Совпадение привязано к ключу browser_download_url, а не к
+  // «любому URL в теле», — иначе такая же ссылка на старый ассет, упомянутая в релиз-ноутах (body),
+  // задала бы неверную версию. В корректном ответе GitHub этот ключ есть только у объектов assets[*].
   private static final Pattern ASSET_URL = Pattern.compile(
-    "https://github\\.com/" + Pattern.quote(REPOSITORY) + "/releases/download/([^/\"]+)/([^/\"]+)");
+    "\"browser_download_url\"\\s*:\\s*\"(https://github\\.com/"
+      + Pattern.quote(REPOSITORY) + "/releases/download/([^/\"]+)/([^/\"]+))\"");
   // Флаг draft у релиза. В pre-release-канале страница содержит ровно один релиз, поэтому
   // сопоставлять флаг конкретному объекту в списке не нужно.
   private static final Pattern DRAFT = Pattern.compile("\"draft\"\\s*:\\s*true");
@@ -160,9 +162,9 @@ public class GitHubReleaseClient {
     var matcher = ASSET_URL.matcher(body);
     while (matcher.find()) {
       if (version == null) {
-        version = matcher.group(1);
+        version = matcher.group(2);
       }
-      assetUrls.putIfAbsent(matcher.group(2), matcher.group());
+      assetUrls.putIfAbsent(matcher.group(3), matcher.group(1));
     }
     if (version == null) {
       return null;

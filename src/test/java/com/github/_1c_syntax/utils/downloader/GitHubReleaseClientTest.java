@@ -67,11 +67,12 @@ class GitHubReleaseClientTest {
 
   @Test
   void versionAndAssetsComeFromDownloadUrlNotFromReleaseBody() throws IOException {
-    // tag_name и body намеренно «отравлены»: фейковый тег и чужая download-ссылка в релиз-ноутах.
-    // Результат должен опираться только на настоящие ссылки на ассеты этого репозитория.
+    // body намеренно «отравлен»: голая ссылка на СТАРЫЙ ассет того же репозитория (до настоящих
+    // ассетов), чужая download-ссылка и фейковый tag_name. Результат должен опираться только на
+    // значения browser_download_url настоящих ассетов, а не на текст релиз-ноутов.
     var body = "{\"tag_name\":\"v0.0.0-fake\",\"draft\":false,"
-      + "\"body\":\"см. https://github.com/evil/repo/releases/download/v9.9.9/bsl-language-server_nix.zip "
-      + "и {\\\"assets\\\":[]}\","
+      + "\"body\":\"со времён " + downloadUrl("v0.20.0", "nix") + " раскладка изменилась; "
+      + "см. также https://github.com/evil/repo/releases/download/v9.9.9/bsl-language-server_nix.zip\","
       + "\"assets\":[" + asset("nix", "v1.2.3") + "]}";
     var client = new GitHubReleaseClient(null, httpClient(200, body));
 
