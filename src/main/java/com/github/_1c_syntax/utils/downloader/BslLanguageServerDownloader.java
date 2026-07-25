@@ -22,8 +22,6 @@
 package com.github._1c_syntax.utils.downloader;
 
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.compress.archivers.zip.ZipArchiveEntry;
-import org.apache.commons.compress.archivers.zip.ZipFile;
 import org.jspecify.annotations.Nullable;
 import org.semver4j.Semver;
 
@@ -34,20 +32,21 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.PosixFilePermission;
 import java.time.Duration;
 import java.util.Comparator;
-import java.util.EnumSet;
 import java.util.Locale;
 import java.util.Optional;
 import java.util.Properties;
-import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Stream;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipFile;
 
 import static java.nio.file.StandardCopyOption.REPLACE_EXISTING;
 
@@ -88,8 +87,8 @@ public class BslLanguageServerDownloader {
    * @param installDir    каталог установки сервера; в нём создаются подпапки с версиями
    *                      и файл {@code SERVER-INFO}
    * @param releaseClient источник сведений о последнем релизе
-   * @param httpClient    клиент только для скачивания ассета (github-api эту загрузку не умеет);
-   *                      должен следовать редиректам — ассеты GitHub отдаются редиректом на CDN
+   * @param httpClient    клиент для скачивания ассета; должен следовать редиректам —
+   *                      ассеты GitHub отдаются редиректом на CDN
    */
   public BslLanguageServerDownloader(Path installDir, GitHubReleaseClient releaseClient,
                                      HttpClient httpClient) {
@@ -224,6 +223,7 @@ public class BslLanguageServerDownloader {
       download(downloadUrl, archive, progressListener);
       deleteRecursively(versionDir);
       extract(archive, versionDir);
+      makeLauncherExecutable(version);
     } finally {
       Files.deleteIfExists(archive);
     }
@@ -293,10 +293,10 @@ public class BslLanguageServerDownloader {
 
   private static void extract(Path archive, Path targetDir) throws IOException {
     Files.createDirectories(targetDir);
-    try (var zip = ZipFile.builder().setPath(archive).get()) {
-      var entries = zip.getEntries();
+    try (var zip = new ZipFile(archive.toFile(), StandardCharsets.UTF_8)) {
+      var entries = zip.entries();
       while (entries.hasMoreElements()) {
-        ZipArchiveEntry entry = entries.nextElement();
+        ZipEntry entry = entries.nextElement();
         var target = targetDir.resolve(entry.getName()).normalize();
         if (!target.startsWith(targetDir)) {
           throw new IOException("Illegal archive entry (zip slip): " + entry.getName());
@@ -309,30 +309,29 @@ public class BslLanguageServerDownloader {
         try (InputStream input = zip.getInputStream(entry)) {
           Files.copy(input, target, REPLACE_EXISTING);
         }
-        applyUnixMode(target, entry.getUnixMode());
       }
     }
   }
 
-  private static void applyUnixMode(Path path, int unixMode) throws IOException {
-    if (!POSIX || unixMode == 0) {
+  /**
+   * Помечает лаунчер сервера исполняемым. {@link java.util.zip} не переносит unix-права из архива
+   * (в отличие от прежней распаковки через commons-compress), поэтому на POSIX-системах бит
+   * исполнения выставляется вручную — на том единственном файле, который и будет запущен. Для
+   * native-image раскладки это и есть исполняемый файл бандла. На Windows, а также если ожидаемого
+   * файла в архиве не оказалось, — no-op.
+   */
+  private void makeLauncherExecutable(String version) throws IOException {
+    if (!POSIX) {
       return;
     }
-    Files.setPosixFilePermissions(path, permissionsFromMode(unixMode));
-  }
-
-  /**
-   * Преобразует unix-режим из zip в набор прав, ограниченный владельцем: групповые и «прочие»
-   * права намеренно не выдаются, чтобы не создавать слишком свободный доступ. Владельцу всегда
-   * доступны чтение и запись, бит исполнения выставляется, если он был установлен в архиве
-   * (нужно для launcher'а и бинарей внутри native-image).
-   */
-  private static Set<PosixFilePermission> permissionsFromMode(int mode) {
-    var permissions = EnumSet.of(PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_WRITE);
-    if ((mode & 0111) != 0) {
-      permissions.add(PosixFilePermission.OWNER_EXECUTE);
+    var binary = binaryPath(version);
+    if (!Files.exists(binary)) {
+      return;
     }
-    return permissions;
+    var permissions = Files.getPosixFilePermissions(binary);
+    if (permissions.add(PosixFilePermission.OWNER_EXECUTE)) {
+      Files.setPosixFilePermissions(binary, permissions);
+    }
   }
 
   private void cleanupOtherVersions(String keepVersion) {
