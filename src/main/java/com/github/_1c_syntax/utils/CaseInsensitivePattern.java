@@ -27,7 +27,12 @@ import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
 
 /**
- * Pattern helper
+ * Компиляция регулярных выражений, нечувствительных к регистру, включая Unicode.
+ *
+ * <p>Обёртка над {@link Pattern#compile(String, int)} с флагами
+ * {@link Pattern#CASE_INSENSITIVE} и {@link Pattern#UNICODE_CASE}. Второй флаг обязателен для
+ * корректного сравнения без учёта регистра в неlatin-алфавитах (в частности, в кириллице —
+ * основном алфавите кода 1С), где одного {@code CASE_INSENSITIVE} недостаточно.
  */
 @UtilityClass
 public class CaseInsensitivePattern {

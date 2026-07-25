@@ -71,6 +71,9 @@ public class GitHubReleaseClient {
   private final HttpClient httpClient;
 
   /**
+   * Создаёт клиент с {@link HttpClient} по умолчанию (таймаут соединения и следование редиректам
+   * настроены под GitHub API).
+   *
    * @param token GitHub OAuth-токен для обхода лимитов анонимного API; может быть {@code null}
    */
   public GitHubReleaseClient(@Nullable String token) {
@@ -81,6 +84,8 @@ public class GitHubReleaseClient {
   }
 
   /**
+   * Создаёт клиент с переданным {@link HttpClient}.
+   *
    * @param token      GitHub OAuth-токен для обхода лимитов анонимного API; может быть {@code null}
    * @param httpClient клиент для запросов к GitHub API — например, с настроенным прокси
    */

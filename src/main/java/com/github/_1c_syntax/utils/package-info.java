@@ -19,6 +19,19 @@
  * You should have received a copy of the GNU Lesser General Public
  * License along with 1c-syntax utils.
  */
+/**
+ * Общие утилиты java-проектов команды 1c-syntax.
+ *
+ * <p>Небольшие независимые помощники, переиспользуемые в BSL Language Server и смежных проектах:
+ * каноникализация путей/URI ({@link com.github._1c_syntax.utils.Absolute}), ленивое вычисление
+ * ({@link com.github._1c_syntax.utils.Lazy}), интернирование значений
+ * ({@link com.github._1c_syntax.utils.GenericInterner},
+ * {@link com.github._1c_syntax.utils.StringInterner}) и компиляция регистронезависимых
+ * регулярных выражений ({@link com.github._1c_syntax.utils.CaseInsensitivePattern}).
+ *
+ * <p>Пакет помечен {@link org.jspecify.annotations.NullMarked}: типы считаются non-null, если
+ * явно не аннотированы {@link org.jspecify.annotations.Nullable}.
+ */
 @NullMarked
 package com.github._1c_syntax.utils;
 
