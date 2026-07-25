@@ -66,11 +66,10 @@ class GitHubReleaseClientTest {
   }
 
   @Test
-  void versionAndAssetsComeFromDownloadUrlNotFromReleaseBody() throws IOException {
-    // body намеренно «отравлен»: голая ссылка на СТАРЫЙ ассет того же репозитория (до настоящих
-    // ассетов), чужая download-ссылка и фейковый tag_name. Результат должен опираться только на
-    // значения browser_download_url настоящих ассетов, а не на текст релиз-ноутов.
-    var body = "{\"tag_name\":\"v0.0.0-fake\",\"draft\":false,"
+  void releaseBodyDoesNotAffectStructuralParsing() throws IOException {
+    // body содержит и старую download-ссылку того же репозитория, и чужую — структурный разбор
+    // берёт версию из tag_name, а ассеты только из assets[], поэтому ссылки в body игнорируются.
+    var body = "{\"tag_name\":\"v1.2.3\",\"draft\":false,"
       + "\"body\":\"со времён " + downloadUrl("v0.20.0", "nix") + " раскладка изменилась; "
       + "см. также https://github.com/evil/repo/releases/download/v9.9.9/bsl-language-server_nix.zip\","
       + "\"assets\":[" + asset("nix", "v1.2.3") + "]}";
@@ -102,28 +101,29 @@ class GitHubReleaseClientTest {
   }
 
   @Test
-  void prereleaseChannelRequestsSinglereleasePageAndPicksIt() throws IOException {
-    var client = new GitHubReleaseClient(null,
-      httpClient(200, releaseArray(releaseObject("v1.3.0-rc.1", false, "nix"))));
+  void prereleaseChannelPicksFirstNonDraftAndScopesAssetsToIt() throws IOException {
+    var json = "[" + releaseObject("v9.9.9", true, "nix") + ","
+      + releaseObject("v1.3.0-rc.1", false, "nix") + ","
+      + releaseObject("v1.2.3", false, "win") + "]";
+    var client = new GitHubReleaseClient(null, httpClient(200, json));
 
     var release = client.latestRelease(BslLanguageServerReleaseChannel.PRERELEASE);
 
     assertThat(release.version()).isEqualTo("v1.3.0-rc.1");
+    // Ассеты именно выбранного релиза, а не соседних в списке.
     assertThat(release.assetDownloadUrls())
       .containsOnly(entry("bsl-language-server_nix.zip", downloadUrl("v1.3.0-rc.1", "nix")));
     assertThat(requests).hasSize(1);
     assertThat(requests.get(0).uri().toString())
-      .contains("/releases?per_page=1&page=1");
+      .startsWith("https://api.github.com/repos/1c-syntax/bsl-language-server/releases?");
   }
 
   @Test
-  void prereleaseChannelSkipsDraftPagesUntilNonDraft() throws IOException {
+  void prereleaseChannelReadsNextPageWhenFirstPageContainsOnlyDrafts() throws IOException {
     var client = new GitHubReleaseClient(null, httpClient(request -> {
-      var draftPage = request.uri().toString().endsWith("page=1");
-      return response(request, 200, releaseArray(
-        draftPage
-          ? releaseObject("v9.9.9", true, "nix")
-          : releaseObject("v1.3.0-rc.1", false, "nix")));
+      var firstPage = request.uri().toString().endsWith("page=1");
+      return response(request, 200, "[" + releaseObject(
+        firstPage ? "v9.9.9" : "v1.3.0-rc.1", firstPage, "nix") + "]");
     }));
 
     var release = client.latestRelease(BslLanguageServerReleaseChannel.PRERELEASE);
@@ -137,7 +137,7 @@ class GitHubReleaseClientTest {
   @Test
   void prereleaseChannelStopsPagingAtBoundWhenEveryPageIsDraft() {
     var client = new GitHubReleaseClient(null, httpClient(request ->
-      response(request, 200, releaseArray(releaseObject("v9.9.9", true, "nix")))));
+      response(request, 200, "[" + releaseObject("v9.9.9", true, "nix") + "]")));
 
     assertThatThrownBy(() -> client.latestRelease(BslLanguageServerReleaseChannel.PRERELEASE))
       .isInstanceOf(IOException.class)
@@ -166,6 +166,26 @@ class GitHubReleaseClientTest {
   }
 
   @Test
+  void failsWhenReleaseHasNoTagName() {
+    var client = new GitHubReleaseClient(null, httpClient(200, "{\"draft\": false, \"assets\": []}"));
+
+    assertThatThrownBy(() -> client.latestRelease(BslLanguageServerReleaseChannel.STABLE))
+      .isInstanceOf(IOException.class)
+      .hasMessageContaining("no suitable releases");
+  }
+
+  @Test
+  void releaseWithoutAssetsYieldsVersionAndEmptyMap() throws IOException {
+    var client = new GitHubReleaseClient(null,
+      httpClient(200, "{\"tag_name\": \"v1.0.0\", \"draft\": false, \"assets\": []}"));
+
+    var release = client.latestRelease(BslLanguageServerReleaseChannel.STABLE);
+
+    assertThat(release.version()).isEqualTo("v1.0.0");
+    assertThat(release.assetDownloadUrls()).isEmpty();
+  }
+
+  @Test
   void failsOnHttpError() {
     var client = new GitHubReleaseClient(null, httpClient(403, "{\"message\": \"rate limit\"}"));
 
@@ -176,14 +196,12 @@ class GitHubReleaseClientTest {
   }
 
   @Test
-  void releaseWithoutMatchingAssetsIsTreatedAsNoSuitable() {
-    // Ответ 200, но ссылок на ассеты этого репозитория нет — версию вывести не из чего.
-    var client = new GitHubReleaseClient(null,
-      httpClient(200, "{\"tag_name\":\"v1.0.0\",\"draft\":false,\"assets\":[]}"));
+  void failsOnMalformedResponse() {
+    var client = new GitHubReleaseClient(null, httpClient(200, "{ this is not json"));
 
     assertThatThrownBy(() -> client.latestRelease(BslLanguageServerReleaseChannel.STABLE))
       .isInstanceOf(IOException.class)
-      .hasMessageContaining("no suitable releases");
+      .hasMessageContaining("Malformed");
   }
 
   @Test
@@ -215,19 +233,12 @@ class GitHubReleaseClientTest {
   }
 
   /**
-   * JSON одного релиза с ассетами под указанные ОС (как отдаёт {@code releases/latest}).
+   * JSON одного релиза с ассетами под указанные ОС.
    */
   private static String releaseObject(String tag, boolean draft, String... oses) {
     var assets = Arrays.stream(oses).map(os -> asset(os, tag)).collect(Collectors.joining(","));
     return "{\"tag_name\":\"" + tag + "\",\"draft\":" + draft
       + ",\"body\":\"notes\",\"assets\":[" + assets + "]}";
-  }
-
-  /**
-   * Обёртка релиза в список из одного элемента (как отдаёт {@code releases?per_page=1}).
-   */
-  private static String releaseArray(String releaseObject) {
-    return "[" + releaseObject + "]";
   }
 
   private HttpClient httpClient(int status, String body) {

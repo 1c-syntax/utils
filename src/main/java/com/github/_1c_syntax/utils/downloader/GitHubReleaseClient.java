@@ -21,6 +21,11 @@
  */
 package com.github._1c_syntax.utils.downloader;
 
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
+import com.google.gson.JsonSyntaxException;
 import org.jspecify.annotations.Nullable;
 
 import java.io.IOException;
@@ -31,20 +36,16 @@ import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.Map;
-import java.util.regex.Pattern;
 
 /**
  * Клиент GitHub-релизов BSL Language Server: находит последний релиз канала в репозитории
  * {@value #REPOSITORY} через GitHub REST API. Работает на {@link java.net.http.HttpClient}
- * и разбирает ответ регулярными выражениями по ссылкам на ассеты — без клиентских библиотек
- * GitHub и внешних JSON-библиотек, чтобы рантайм-замкнутость оставалась минимальной (важно
- * для встраивания в OSGi).
+ * и разбирает ответ через gson — без клиентских библиотек GitHub (и без Jackson, который тянула
+ * прежняя github-api), чтобы рантайм-замкнутость оставалась минимальной и OSGi-совместимой.
  *
- * <p>Полноценный JSON-разбор не нужен: и стабильный, и pre-release-канал запрашиваются так, чтобы
- * в ответе был ровно один релиз, а из него нужны лишь версия и ссылки на ассеты. И то, и другое
- * берётся из самих download-ссылок вида
- * {@code https://github.com/<repo>/releases/download/<tag>/<file>} — поэтому произвольное
- * содержимое поля {@code body} (релиз-ноуты) не влияет на результат.
+ * <p>Из ответа нужны лишь тег релиза, флаг {@code draft} и ассеты (имя + URL). Структурный разбор
+ * gson берёт их строго из нужных полей, поэтому произвольное содержимое поля {@code body}
+ * (релиз-ноуты) на результат не влияет.
  *
  * <p>Отдельная зависимость загрузчика — чтобы в тестах его можно было замокать и прогнать поток
  * скачивания без обращения к GitHub. Класс не {@code final} специально: так его мокает Mockito.
@@ -55,28 +56,16 @@ public class GitHubReleaseClient {
   private static final String API_ROOT = "https://api.github.com";
   private static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(10);
   private static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(30);
-  // Верхняя граница пагинации pre-release: каждая страница — один релиз (per_page=1), цикл
-  // дочитывает хвост, только пока встречает draft'ы; ограничение защищает от бесконечного
-  // опроса, если апстрим (зеркало/прокси/кэш) отдаёт draft-релиз бесконечно.
+  // Релизы отдаются newest-first: не-draft почти всегда на первой странице, поэтому страницы
+  // небольшие; пагинация ниже дочитает хвост в вырожденном случае «страница целиком из драфтов».
+  private static final int RELEASES_PER_PAGE = 30;
+  // Верхняя граница пагинации: у настоящего GitHub цикл завершает пустая страница за последней,
+  // но зеркало/прокси/кэш может бесконечно отдавать одну и ту же непустую страницу драфтов —
+  // ограничение защищает от бесконечного опроса до упора в rate limit.
   private static final int MAX_RELEASES_PAGES = 10;
   // Сколько символов тела ответа включать в текст ошибки для диагностики (GitHub кладёт причину
   // в поле message; токен в теле не возвращается, так что утечки секрета нет).
   private static final int ERROR_BODY_LIMIT = 500;
-
-  // Ассет релиза: значение поля browser_download_url вида
-  // https://github.com/<repo>/releases/download/<tag>/<file>. Группа 1 — сам URL, группа 2 — тег
-  // (версия), группа 3 — имя ассета. Совпадение привязано к ключу browser_download_url, а не к
-  // «любому URL в теле», — иначе такая же ссылка на старый ассет, упомянутая в релиз-ноутах (body),
-  // задала бы неверную версию. В корректном ответе GitHub этот ключ есть только у объектов assets[*].
-  private static final Pattern ASSET_URL = Pattern.compile(
-    "\"browser_download_url\"\\s*:\\s*\"(https://github\\.com/"
-      + Pattern.quote(REPOSITORY) + "/releases/download/([^/\"]+)/([^/\"]+))\"");
-  // Флаг draft у релиза. В pre-release-канале страница содержит ровно один релиз, поэтому
-  // сопоставлять флаг конкретному объекту в списке не нужно.
-  private static final Pattern DRAFT = Pattern.compile("\"draft\"\\s*:\\s*true");
-  // Есть ли в ответе вообще объект релиза — чтобы отличить его от пустого списка [] за последней
-  // страницей пагинации.
-  private static final Pattern HAS_RELEASE = Pattern.compile("\"tag_name\"\\s*:");
 
   private final @Nullable String token;
   private final HttpClient httpClient;
@@ -112,64 +101,91 @@ public class GitHubReleaseClient {
       ? latestNonDraftRelease()
       : latestStableRelease();
 
-    if (release == null) {
+    var result = release == null ? null : toRelease(release);
+    if (result == null) {
       throw new IOException(
         "Repository " + REPOSITORY + " has no suitable releases for channel " + channel);
     }
-    return release;
+    return result;
   }
 
   /**
    * Последний стабильный релиз: эндпоинт {@code releases/latest} сам исключает draft
    * и pre-release, а при полном отсутствии стабильных релизов отвечает 404.
    */
-  private @Nullable Release latestStableRelease() throws IOException {
+  private @Nullable JsonObject latestStableRelease() throws IOException {
     var response = send("/repos/" + REPOSITORY + "/releases/latest");
     if (response.statusCode() == 404) {
       return null;
     }
-    return parseRelease(body(response));
+    return parse(body(response)) instanceof JsonObject release ? release : null;
   }
 
   /**
-   * Последний релиз с учётом pre-release. Запрашиваем по одному релизу на страницу
-   * ({@code per_page=1}, newest-first): так в ответе всегда ровно один релиз и не нужно
-   * сопоставлять ассеты нескольким релизам в списке. Draft'ы (видны только push-токену)
-   * пропускаем, переходя к следующей странице; анонимно GitHub их вообще не отдаёт.
+   * Последний релиз с учётом pre-release: список {@code releases} отдаётся newest-first,
+   * берём первый не-draft. Драфты видны только пользователям с push-доступом, но при вызове
+   * с таким токеном их нужно пропустить, дочитывая следующие страницы при необходимости.
    */
-  private @Nullable Release latestNonDraftRelease() throws IOException {
+  private @Nullable JsonObject latestNonDraftRelease() throws IOException {
     for (var page = 1; page <= MAX_RELEASES_PAGES; page++) {
-      var body = get("/repos/" + REPOSITORY + "/releases?per_page=1&page=" + page);
-      if (!HAS_RELEASE.matcher(body).find()) {
+      var path = "/repos/" + REPOSITORY + "/releases?per_page=" + RELEASES_PER_PAGE + "&page=" + page;
+      if (!(parse(get(path)) instanceof JsonArray releases) || releases.isEmpty()) {
         return null;
       }
-      if (DRAFT.matcher(body).find()) {
-        continue;
+      for (JsonElement candidate : releases) {
+        if (candidate instanceof JsonObject release && !isDraft(release)) {
+          return release;
+        }
       }
-      return parseRelease(body);
     }
     return null;
   }
 
+  private static boolean isDraft(JsonObject release) {
+    return asBoolean(release.get("draft"));
+  }
+
   /**
-   * Извлекает версию и ссылки на ассеты из ответа с одним релизом. Версия — тег из пути
-   * download-ссылки (у всех ассетов релиза он одинаковый), карта — «имя ассета → URL». Если
-   * ассетов нет, релиз бесполезен загрузчику — возвращается {@code null}.
+   * Извлекает из объекта релиза версию (тег) и карту «имя ассета → URL». Возвращает {@code null},
+   * если у релиза нет тега.
    */
-  private static @Nullable Release parseRelease(String body) {
-    var assetUrls = new LinkedHashMap<String, String>();
-    String version = null;
-    var matcher = ASSET_URL.matcher(body);
-    while (matcher.find()) {
-      if (version == null) {
-        version = matcher.group(2);
-      }
-      assetUrls.putIfAbsent(matcher.group(3), matcher.group(1));
-    }
+  private static @Nullable Release toRelease(JsonObject release) {
+    var version = asString(release.get("tag_name"));
     if (version == null) {
       return null;
     }
+    var assetUrls = new LinkedHashMap<String, String>();
+    if (release.get("assets") instanceof JsonArray assets) {
+      for (JsonElement candidate : assets) {
+        if (candidate instanceof JsonObject asset) {
+          var name = asString(asset.get("name"));
+          var url = asString(asset.get("browser_download_url"));
+          if (name != null && url != null) {
+            assetUrls.putIfAbsent(name, url);
+          }
+        }
+      }
+    }
     return new Release(version, Map.copyOf(assetUrls));
+  }
+
+  private static @Nullable String asString(@Nullable JsonElement element) {
+    return element != null && element.isJsonPrimitive() && element.getAsJsonPrimitive().isString()
+      ? element.getAsString()
+      : null;
+  }
+
+  private static boolean asBoolean(@Nullable JsonElement element) {
+    return element != null && element.isJsonPrimitive() && element.getAsJsonPrimitive().isBoolean()
+      && element.getAsBoolean();
+  }
+
+  private static JsonElement parse(String body) throws IOException {
+    try {
+      return JsonParser.parseString(body);
+    } catch (JsonSyntaxException e) {
+      throw new IOException("Malformed GitHub API response", e);
+    }
   }
 
   private String get(String path) throws IOException {
