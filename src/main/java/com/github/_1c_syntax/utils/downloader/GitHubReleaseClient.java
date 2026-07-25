@@ -51,6 +51,13 @@ public class GitHubReleaseClient {
   // Релизы отдаются newest-first: не-draft почти всегда на первой странице, поэтому страницы
   // небольшие; пагинация ниже дочитает хвост в вырожденном случае «страница целиком из драфтов».
   private static final int RELEASES_PER_PAGE = 30;
+  // Верхняя граница пагинации: у настоящего GitHub цикл завершает пустая страница за последней,
+  // но зеркало/прокси/кэш может бесконечно отдавать одну и ту же непустую страницу драфтов —
+  // ограничение защищает от бесконечного опроса до упора в rate limit.
+  private static final int MAX_RELEASES_PAGES = 10;
+  // Сколько символов тела ответа включать в текст ошибки для диагностики (GitHub кладёт причину
+  // в поле message; токен в теле не возвращается, так что утечки секрета нет).
+  private static final int ERROR_BODY_LIMIT = 500;
 
   private final @Nullable String token;
   private final HttpClient httpClient;
@@ -114,7 +121,7 @@ public class GitHubReleaseClient {
    * с таким токеном их нужно пропустить, дочитывая следующие страницы при необходимости.
    */
   private @Nullable Map<?, ?> latestNonDraftRelease() throws IOException {
-    for (var page = 1; ; page++) {
+    for (var page = 1; page <= MAX_RELEASES_PAGES; page++) {
       var path = "/repos/" + REPOSITORY + "/releases?per_page=" + RELEASES_PER_PAGE + "&page=" + page;
       if (!(Json.parse(get(path)) instanceof List<?> releases) || releases.isEmpty()) {
         return null;
@@ -125,6 +132,7 @@ public class GitHubReleaseClient {
         }
       }
     }
+    return null;
   }
 
   private static Map<String, String> assetDownloadUrls(Map<?, ?> release) {
@@ -166,10 +174,22 @@ public class GitHubReleaseClient {
 
   private static String body(HttpResponse<String> response) throws IOException {
     if (response.statusCode() != 200) {
-      throw new IOException(
-        "GitHub API request " + response.request().uri() + " failed: HTTP " + response.statusCode());
+      var details = errorDetails(response.body());
+      throw new IOException("GitHub API request " + response.request().uri()
+        + " failed: HTTP " + response.statusCode() + details);
     }
     return response.body();
+  }
+
+  private static String errorDetails(@Nullable String body) {
+    if (body == null || body.isBlank()) {
+      return "";
+    }
+    var trimmed = body.strip();
+    if (trimmed.length() > ERROR_BODY_LIMIT) {
+      trimmed = trimmed.substring(0, ERROR_BODY_LIMIT) + "…";
+    }
+    return ": " + trimmed;
   }
 
   /**

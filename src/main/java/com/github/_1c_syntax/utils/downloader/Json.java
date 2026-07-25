@@ -33,8 +33,9 @@ import java.util.Map;
  * Минимальный JSON-парсер для ответов GitHub REST API — чтобы не тянуть Jackson/gson
  * в рантайм-замкнутость библиотеки (важно для встраивания в OSGi, см. issue #81).
  *
- * <p>Поддерживает весь синтаксис RFC 8259. Значения отображаются в {@link Map}
- * (объект, порядок ключей сохраняется), {@link List} (массив), {@link String},
+ * <p>Принимает любой валидный по RFC 8259 документ; к числовым литералам чуть мягче стандарта
+ * (например, допускает ведущие нули) — для ответов GitHub это несущественно. Значения отображаются
+ * в {@link Map} (объект, порядок ключей сохраняется), {@link List} (массив), {@link String},
  * {@link Long}/{@link Double} (число), {@link Boolean} и {@code null}.
  *
  * <p>Некорректный JSON приводит к {@link IOException}: парсер применяется только к сетевым
@@ -167,13 +168,18 @@ final class Json {
       throw error("Unexpected end of unicode escape");
     }
     var hex = text.substring(pos, pos + 4);
-    try {
-      var code = Integer.parseInt(hex, 16);
-      pos += 4;
-      return (char) code;
-    } catch (NumberFormatException e) {
-      throw error("Invalid unicode escape '\\u" + hex + "'");
+    // Не через Integer.parseInt(hex, 16): он допускает знак (+/-), а RFC 8259 требует
+    // ровно четыре hex-цифры — иначе escape со знаком дал бы отрицательный код и мусорный символ.
+    var code = 0;
+    for (var i = 0; i < 4; i++) {
+      var digit = Character.digit(hex.charAt(i), 16);
+      if (digit < 0) {
+        throw error("Invalid unicode escape '\\u" + hex + "'");
+      }
+      code = code * 16 + digit;
     }
+    pos += 4;
+    return (char) code;
   }
 
   private Number readNumber() throws IOException {
@@ -187,15 +193,23 @@ final class Json {
     var literal = text.substring(start, pos);
     try {
       if (literal.indexOf('.') < 0 && literal.indexOf('e') < 0 && literal.indexOf('E') < 0) {
-        try {
-          return Long.parseLong(literal);
-        } catch (NumberFormatException outOfLongRange) {
-          return Double.parseDouble(literal);
-        }
+        return parseIntegral(literal);
       }
       return Double.parseDouble(literal);
     } catch (NumberFormatException e) {
       throw error("Invalid number '" + literal + "'");
+    }
+  }
+
+  /**
+   * Разбирает целочисленный литерал как {@link Long}, а при выходе за диапазон {@code long} —
+   * как {@link Double}.
+   */
+  private static Number parseIntegral(String literal) {
+    try {
+      return Long.parseLong(literal);
+    } catch (NumberFormatException outOfLongRange) {
+      return Double.parseDouble(literal);
     }
   }
 

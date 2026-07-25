@@ -24,6 +24,7 @@ package com.github._1c_syntax.utils.downloader;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 
@@ -86,7 +87,7 @@ class JsonTest {
   @Test
   void parsesNestedArrays() throws IOException {
     assertThat(Json.parse("[[1, 2], [], [null, true]]"))
-      .isEqualTo(List.of(List.of(1L, 2L), List.of(), java.util.Arrays.asList(null, true)));
+      .isEqualTo(List.of(List.of(1L, 2L), List.of(), Arrays.asList(null, true)));
   }
 
   @Test
@@ -103,6 +104,8 @@ class JsonTest {
       "\"unterminated",
       "\"bad escape \\x\"",
       "\"bad unicode \\u12GX\"",
+      "\"signed unicode \\u+041\"",
+      "\"signed unicode \\u-041\"",
       "\"truncated unicode \\u12",
       "tru",
       "nul",

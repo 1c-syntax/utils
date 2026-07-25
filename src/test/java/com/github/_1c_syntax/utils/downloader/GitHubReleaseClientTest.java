@@ -139,6 +139,20 @@ class GitHubReleaseClientTest {
   }
 
   @Test
+  void prereleaseChannelStopsPagingAtBoundWhenEveryPageIsDrafts() {
+    var draftsOnlyPage = """
+      [{"tag_name": "v9.9.9", "draft": true, "prerelease": true, "assets": []}]
+      """;
+    var client = new GitHubReleaseClient(null, httpClient(request -> response(request, 200, draftsOnlyPage)));
+
+    assertThatThrownBy(() -> client.latestRelease(BslLanguageServerReleaseChannel.PRERELEASE))
+      .isInstanceOf(IOException.class)
+      .hasMessageContaining("no suitable releases");
+    // Ограничение пагинации: без него мок отдавал бы непустую draft-страницу бесконечно.
+    assertThat(requests).hasSize(10);
+  }
+
+  @Test
   void prereleaseChannelFailsWhenThereAreNoReleases() {
     var client = new GitHubReleaseClient(null, httpClient(200, "[]"));
 
@@ -162,7 +176,8 @@ class GitHubReleaseClientTest {
 
     assertThatThrownBy(() -> client.latestRelease(BslLanguageServerReleaseChannel.STABLE))
       .isInstanceOf(IOException.class)
-      .hasMessageContaining("HTTP 403");
+      .hasMessageContaining("HTTP 403")
+      .hasMessageContaining("rate limit");
   }
 
   @Test
