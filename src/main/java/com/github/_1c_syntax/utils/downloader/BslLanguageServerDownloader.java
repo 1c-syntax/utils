@@ -84,6 +84,8 @@ public class BslLanguageServerDownloader {
   private final HttpClient httpClient;
 
   /**
+   * Создаёт загрузчик поверх указанного каталога установки и клиентов доступа к GitHub.
+   *
    * @param installDir    каталог установки сервера; в нём создаются подпапки с версиями
    *                      и файл {@code SERVER-INFO}
    * @param releaseClient источник сведений о последнем релизе

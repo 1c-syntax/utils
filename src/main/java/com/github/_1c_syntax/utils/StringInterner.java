@@ -24,9 +24,28 @@ package com.github._1c_syntax.utils;
 import org.jspecify.annotations.Nullable;
 
 /**
- * Реализация интернера для строк
+ * Интернер строк — {@link GenericInterner} для {@link String}, дополнительно принимающий
+ * {@code null}.
+ *
+ * <p>В отличие от базового интернера, {@code null} не сохраняется, а нормализуется в пустую
+ * строку, поэтому метод {@link #intern(String)} никогда не возвращает {@code null}. Для непустых
+ * строк поведение совпадает с {@link GenericInterner}.
  */
 public class StringInterner extends GenericInterner<String> {
+
+  /**
+   * Создаёт пустой интернер строк.
+   */
+  public StringInterner() {
+    // no additional state
+  }
+
+  /**
+   * Возвращает канонический экземпляр переданной строки; для {@code null} возвращает пустую строку.
+   *
+   * @param object интернируемая строка либо {@code null}
+   * @return канонический экземпляр строки, либо {@code ""}, если передан {@code null}
+   */
   @Override
   public String intern(@Nullable String object) {
     if (object == null) {

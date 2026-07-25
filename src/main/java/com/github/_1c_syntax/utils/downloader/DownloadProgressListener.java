@@ -42,6 +42,8 @@ public interface DownloadProgressListener {
   };
 
   /**
+   * Вызывается при поступлении очередной порции скачанных байт.
+   *
    * @param bytesRead  сколько байт ассета уже скачано
    * @param totalBytes полный размер ассета в байтах или {@code -1}, если сервер его не сообщил
    */
