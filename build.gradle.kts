@@ -49,7 +49,6 @@ dependencies {
 
     // Загрузчик BSL Language Server
     implementation("org.slf4j:slf4j-api:2.0.18")
-    implementation("org.apache.commons:commons-compress:1.28.0")
     implementation("org.semver4j:semver4j:6.0.0")
 
     testImplementation("org.assertj:assertj-core:3.27.7")

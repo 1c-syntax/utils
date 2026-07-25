@@ -191,6 +191,21 @@ class BslLanguageServerDownloaderTest {
   }
 
   @Test
+  @DisabledOnOs(OS.WINDOWS)
+  void downloadIfNeededMarksLauncherExecutable(@TempDir Path installDir) throws IOException {
+    var archive = zipWithLaunchers(300 * 1024);
+    var releaseClient = mock(GitHubReleaseClient.class);
+    when(releaseClient.latestRelease(any()))
+      .thenReturn(new GitHubReleaseClient.Release("1.2.3", allOsAssets()));
+    var downloader = new BslLanguageServerDownloader(installDir, releaseClient, httpClientReturning(archive));
+
+    var binary = downloader.downloadIfNeeded(BslLanguageServerReleaseChannel.STABLE);
+
+    assertThat(binary).exists();
+    assertThat(Files.isExecutable(binary)).isTrue();
+  }
+
+  @Test
   void downloadIfNeededReportsProgressForTheAsset(@TempDir Path installDir) throws IOException {
     var archive = zipWithLaunchers(300 * 1024);
     var releaseClient = mock(GitHubReleaseClient.class);
