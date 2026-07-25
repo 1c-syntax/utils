@@ -26,7 +26,7 @@
 
 ```kotlin
 dependencies {
-    implementation("io.github.1c-syntax:utils:0.9.0")
+    implementation("io.github.1c-syntax:utils:VERSION")
 }
 ```
 
@@ -36,7 +36,7 @@ dependencies {
 <dependency>
     <groupId>io.github.1c-syntax</groupId>
     <artifactId>utils</artifactId>
-    <version>0.9.0</version>
+    <version>VERSION</version>
 </dependency>
 ```
 
