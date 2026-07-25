@@ -29,15 +29,22 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
-import java.util.HashMap;
-import java.util.List;
+import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.regex.Pattern;
 
 /**
  * Клиент GitHub-релизов BSL Language Server: находит последний релиз канала в репозитории
  * {@value #REPOSITORY} через GitHub REST API. Работает на {@link java.net.http.HttpClient}
- * и встроенном JSON-парсере — без клиентских библиотек GitHub и внешних JSON-библиотек,
- * чтобы рантайм-замкнутость оставалась минимальной (важно для встраивания в OSGi).
+ * и разбирает ответ регулярными выражениями по ссылкам на ассеты — без клиентских библиотек
+ * GitHub и внешних JSON-библиотек, чтобы рантайм-замкнутость оставалась минимальной (важно
+ * для встраивания в OSGi).
+ *
+ * <p>Полноценный JSON-разбор не нужен: и стабильный, и pre-release-канал запрашиваются так, чтобы
+ * в ответе был ровно один релиз, а из него нужны лишь версия и ссылки на ассеты. И то, и другое
+ * берётся из самих download-ссылок вида
+ * {@code https://github.com/<repo>/releases/download/<tag>/<file>} — поэтому произвольное
+ * содержимое поля {@code body} (релиз-ноуты) не влияет на результат.
  *
  * <p>Отдельная зависимость загрузчика — чтобы в тестах его можно было замокать и прогнать поток
  * скачивания без обращения к GitHub. Класс не {@code final} специально: так его мокает Mockito.
@@ -48,16 +55,26 @@ public class GitHubReleaseClient {
   private static final String API_ROOT = "https://api.github.com";
   private static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(10);
   private static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(30);
-  // Релизы отдаются newest-first: не-draft почти всегда на первой странице, поэтому страницы
-  // небольшие; пагинация ниже дочитает хвост в вырожденном случае «страница целиком из драфтов».
-  private static final int RELEASES_PER_PAGE = 30;
-  // Верхняя граница пагинации: у настоящего GitHub цикл завершает пустая страница за последней,
-  // но зеркало/прокси/кэш может бесконечно отдавать одну и ту же непустую страницу драфтов —
-  // ограничение защищает от бесконечного опроса до упора в rate limit.
+  // Верхняя граница пагинации pre-release: каждая страница — один релиз (per_page=1), цикл
+  // дочитывает хвост, только пока встречает draft'ы; ограничение защищает от бесконечного
+  // опроса, если апстрим (зеркало/прокси/кэш) отдаёт draft-релиз бесконечно.
   private static final int MAX_RELEASES_PAGES = 10;
   // Сколько символов тела ответа включать в текст ошибки для диагностики (GitHub кладёт причину
   // в поле message; токен в теле не возвращается, так что утечки секрета нет).
   private static final int ERROR_BODY_LIMIT = 500;
+
+  // Ссылка на ассет релиза: https://github.com/<repo>/releases/download/<tag>/<file>.
+  // Группа 1 — тег (версия), группа 2 — имя ассета, всё совпадение — URL для скачивания. Только
+  // browser_download_url имеет такой путь (у html_url — /releases/tag/, у API-ссылок другой хост),
+  // поэтому лишнего не захватываем.
+  private static final Pattern ASSET_URL = Pattern.compile(
+    "https://github\\.com/" + Pattern.quote(REPOSITORY) + "/releases/download/([^/\"]+)/([^/\"]+)");
+  // Флаг draft у релиза. В pre-release-канале страница содержит ровно один релиз, поэтому
+  // сопоставлять флаг конкретному объекту в списке не нужно.
+  private static final Pattern DRAFT = Pattern.compile("\"draft\"\\s*:\\s*true");
+  // Есть ли в ответе вообще объект релиза — чтобы отличить его от пустого списка [] за последней
+  // страницей пагинации.
+  private static final Pattern HAS_RELEASE = Pattern.compile("\"tag_name\"\\s*:");
 
   private final @Nullable String token;
   private final HttpClient httpClient;
@@ -89,64 +106,68 @@ public class GitHubReleaseClient {
    * @throws IOException если релизы недоступны или подходящего релиза нет
    */
   public Release latestRelease(BslLanguageServerReleaseChannel channel) throws IOException {
-    Map<?, ?> release;
-    if (channel == BslLanguageServerReleaseChannel.PRERELEASE) {
-      release = latestNonDraftRelease();
-    } else {
-      release = latestStableRelease();
-    }
+    var release = channel == BslLanguageServerReleaseChannel.PRERELEASE
+      ? latestNonDraftRelease()
+      : latestStableRelease();
 
-    if (release == null || !(release.get("tag_name") instanceof String tagName)) {
+    if (release == null) {
       throw new IOException(
         "Repository " + REPOSITORY + " has no suitable releases for channel " + channel);
     }
-    return new Release(tagName, assetDownloadUrls(release));
+    return release;
   }
 
   /**
    * Последний стабильный релиз: эндпоинт {@code releases/latest} сам исключает draft
    * и pre-release, а при полном отсутствии стабильных релизов отвечает 404.
    */
-  private @Nullable Map<?, ?> latestStableRelease() throws IOException {
+  private @Nullable Release latestStableRelease() throws IOException {
     var response = send("/repos/" + REPOSITORY + "/releases/latest");
     if (response.statusCode() == 404) {
       return null;
     }
-    return Json.parse(body(response)) instanceof Map<?, ?> release ? release : null;
+    return parseRelease(body(response));
   }
 
   /**
-   * Последний релиз с учётом pre-release: список {@code releases} отдаётся newest-first,
-   * берём первый не-draft. Драфты видны только пользователям с push-доступом, но при вызове
-   * с таким токеном их нужно пропустить, дочитывая следующие страницы при необходимости.
+   * Последний релиз с учётом pre-release. Запрашиваем по одному релизу на страницу
+   * ({@code per_page=1}, newest-first): так в ответе всегда ровно один релиз и не нужно
+   * сопоставлять ассеты нескольким релизам в списке. Draft'ы (видны только push-токену)
+   * пропускаем, переходя к следующей странице; анонимно GitHub их вообще не отдаёт.
    */
-  private @Nullable Map<?, ?> latestNonDraftRelease() throws IOException {
+  private @Nullable Release latestNonDraftRelease() throws IOException {
     for (var page = 1; page <= MAX_RELEASES_PAGES; page++) {
-      var path = "/repos/" + REPOSITORY + "/releases?per_page=" + RELEASES_PER_PAGE + "&page=" + page;
-      if (!(Json.parse(get(path)) instanceof List<?> releases) || releases.isEmpty()) {
+      var body = get("/repos/" + REPOSITORY + "/releases?per_page=1&page=" + page);
+      if (!HAS_RELEASE.matcher(body).find()) {
         return null;
       }
-      for (Object candidate : releases) {
-        if (candidate instanceof Map<?, ?> release && !Boolean.TRUE.equals(release.get("draft"))) {
-          return release;
-        }
+      if (DRAFT.matcher(body).find()) {
+        continue;
       }
+      return parseRelease(body);
     }
     return null;
   }
 
-  private static Map<String, String> assetDownloadUrls(Map<?, ?> release) {
-    var assetUrls = new HashMap<String, String>();
-    if (release.get("assets") instanceof List<?> assets) {
-      for (Object candidate : assets) {
-        if (candidate instanceof Map<?, ?> asset
-          && asset.get("name") instanceof String name
-          && asset.get("browser_download_url") instanceof String url) {
-          assetUrls.putIfAbsent(name, url);
-        }
+  /**
+   * Извлекает версию и ссылки на ассеты из ответа с одним релизом. Версия — тег из пути
+   * download-ссылки (у всех ассетов релиза он одинаковый), карта — «имя ассета → URL». Если
+   * ассетов нет, релиз бесполезен загрузчику — возвращается {@code null}.
+   */
+  private static @Nullable Release parseRelease(String body) {
+    var assetUrls = new LinkedHashMap<String, String>();
+    String version = null;
+    var matcher = ASSET_URL.matcher(body);
+    while (matcher.find()) {
+      if (version == null) {
+        version = matcher.group(1);
       }
+      assetUrls.putIfAbsent(matcher.group(2), matcher.group());
     }
-    return Map.copyOf(assetUrls);
+    if (version == null) {
+      return null;
+    }
+    return new Release(version, Map.copyOf(assetUrls));
   }
 
   private String get(String path) throws IOException {
