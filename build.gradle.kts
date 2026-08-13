@@ -49,7 +49,7 @@ dependencies {
 
     // Загрузчик BSL Language Server
     implementation("org.slf4j:slf4j-api:2.0.18")
-    implementation("com.google.code.gson:gson:2.13.1") {
+    implementation("com.google.code.gson:gson:2.14.0") {
         // Чисто compile-time аннотации (@CanIgnoreReturnValue и пр.) — в рантайме не нужны,
         // не тащим их в замкнутость.
         exclude(group = "com.google.errorprone", module = "error_prone_annotations")
