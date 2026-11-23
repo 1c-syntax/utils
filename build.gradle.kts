@@ -48,7 +48,7 @@ dependencies {
     api("org.jspecify:jspecify:1.0.1")
 
     // Загрузчик BSL Language Server
-    implementation("org.slf4j:slf4j-api:2.0.19")
+    implementation("org.slf4j:slf4j-api:2.0.20")
     implementation("com.google.code.gson:gson:2.15.0") {
         // Чисто compile-time аннотации (@CanIgnoreReturnValue и пр.) — в рантайме не нужны,
         // не тащим их в замкнутость.
